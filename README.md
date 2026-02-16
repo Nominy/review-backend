@@ -18,6 +18,12 @@ Notes:
 - `OPENROUTER_MODEL` is optional (defaults to `openai/gpt-oss-120b`).
 - `OPENROUTER_TEST_MODE` is optional (`false` by default). Set `true` to skip OpenRouter and return mock feedback (`test test test`, scores `1/2/3`).
 - `REVIEW_PAIR_LOG_PATH` is optional (defaults to `logs/review-text-pairs.jsonl`).
+- `HOST` is optional (defaults to `127.0.0.1`).
+- `PORT` is optional (defaults to `3001`).
+- `PUBLIC_BASE_URL` is optional (for logs/visibility; defaults to `http://<HOST>:<PORT>`).
+- `CORS_ALLOWED_ORIGINS` is optional:
+  - set `*` to allow all origins (dev)
+  - or comma-separated values (recommended), e.g. `https://dashboard.babel.audio`
 
 Each `POST /api/review/generate` call appends one JSON line with:
 - `reviewActionId`
@@ -26,6 +32,22 @@ Each `POST /api/review/generate` call appends one JSON line with:
 - `loggedAt`, `originalCapturedAt`, `currentCapturedAt`
 
 Default URL: `http://127.0.0.1:3001`
+
+## Production Domain (`reviewgen.ovh`)
+
+1. Point DNS `A` record for `reviewgen.ovh` to your server IP.
+2. Run backend on server with:
+   - `HOST=127.0.0.1`
+   - `PORT=3001`
+   - `PUBLIC_BASE_URL=https://reviewgen.ovh`
+   - `CORS_ALLOWED_ORIGINS=https://dashboard.babel.audio`
+   - you can start from `.env.production.example`
+3. Put reverse proxy in front of backend:
+   - Caddy example: `deploy/Caddyfile`
+   - Nginx example: `deploy/nginx.reviewgen.ovh.conf`
+4. Proxy `https://reviewgen.ovh` -> `http://127.0.0.1:3001`.
+
+After this, extension can call `https://reviewgen.ovh/api/review/generate`.
 
 ## Endpoints
 

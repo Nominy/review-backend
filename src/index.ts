@@ -31,11 +31,17 @@ function assertGenerateBody(body: unknown): asserts body is PrepareBody {
 const app = new Elysia()
   .use(
     cors({
-      origin: true,
+      origin: config.corsOrigin,
       methods: ["GET", "POST", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization"]
     })
   )
+  .get("/", () => ({
+    ok: true,
+    service: "babel-review-backend",
+    docs: "/health",
+    now: new Date().toISOString()
+  }))
   .get("/health", () => ({
     ok: true,
     service: "babel-review-backend",
@@ -71,9 +77,14 @@ const app = new Elysia()
       return { error: msg };
     }
   })
-  .listen(config.port);
+  .listen({ hostname: config.host, port: config.port });
 
-console.log(`[babel-review-backend] listening on http://127.0.0.1:${config.port}`);
+console.log(`[babel-review-backend] listening on ${config.publicBaseUrl} (bind ${config.host}:${config.port})`);
+console.log(
+  `[babel-review-backend] cors origin: ${
+    config.corsOrigin === true ? "*" : config.corsOrigin.join(", ")
+  }`
+);
 console.log(`[babel-review-backend] model: ${config.openRouterModel}`);
 console.log(`[babel-review-backend] test mode: ${config.openRouterTestMode}`);
 
