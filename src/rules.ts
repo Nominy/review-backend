@@ -1,0 +1,72 @@
+export const CATEGORIES = [
+  "Word Accuracy",
+  "Timestamp Accuracy",
+  "Punctuation & Formatting",
+  "Tags & Emphasis",
+  "Segmentation"
+] as const;
+
+export const ALLOWED_NONVERBAL_TAGS = [
+  "[вдох]",
+  "[вздох]",
+  "[вибрация-губами]",
+  "[втягивание-воздуха-сквозь-зубы]",
+  "[выдох]",
+  "[выдувание-воздуха]",
+  "[глотание]",
+  "[другой-звук]",
+  "[дыхание]",
+  "[зевок]",
+  "[икота]",
+  "[кашель]",
+  "[кряхтенье]",
+  "[напевание]",
+  "[насмешка]",
+  "[неразборчиво]",
+  "[плач]",
+  "[причмокивание]",
+  "[прочищение-горла]",
+  "[радостный-возглас]",
+  "[резкий-вздох]",
+  "[свист]",
+  "[смех]",
+  "[смешок]",
+  "[стон]",
+  "[фырканье]",
+  "[хихиканье]",
+  "[цоканье-языком]",
+  "[чихание]",
+  "[шиканье]",
+  "[шмыганье-носом]",
+  "[щелчок-языком]"
+];
+
+export const ALLOWED_STYLE_TAG_NAMES = ["смех-в-речи", "речь-нараспев", "протяжная-речь"];
+
+export const INTERJECTIONS = [
+  { standard: "а, а-а", not_allowed: "аа, а-а-а" },
+  { standard: "ага", not_allowed: "ага-а, агаа" },
+  { standard: "угу", not_allowed: "у-г-у, угуу" },
+  { standard: "ах", not_allowed: "ахх, а-а-ах" },
+  { standard: "эх", not_allowed: "э-эх, эхх" },
+  { standard: "э", not_allowed: "ээ, эээ" },
+  { standard: "э-э", not_allowed: "эээ, э…э" },
+  { standard: "м-да", not_allowed: "мда, мдя" },
+  { standard: "мм", not_allowed: "Ммм, м-м-м" },
+  { standard: "мгм", not_allowed: "мм-гм, мхм" },
+  { standard: "ну", not_allowed: "нууу, ну-у" },
+  { standard: "ой", not_allowed: "оой, ойй" },
+  { standard: "ох", not_allowed: "охх" },
+  { standard: "ух", not_allowed: "ухх" },
+  { standard: "фу", not_allowed: "фу-у" },
+  { standard: "хм", not_allowed: "хмм, гм" },
+  { standard: "ха", not_allowed: "ха-а, хаха" },
+  { standard: "ха-ха", not_allowed: "хахаха" },
+  { standard: "чёрт", not_allowed: "чорт" },
+  { standard: "блин", not_allowed: "бли-ин" },
+  { standard: "вот", not_allowed: "вооот" },
+  { standard: "ей-богу", not_allowed: "ейбогу, ей богу" },
+  { standard: "Ам", not_allowed: "А-м, а-ам." },
+  { standard: "окей", not_allowed: "о'кей, ОК" },
+  { standard: "Н-да (при четком Н)", not_allowed: "Нда" }
+];

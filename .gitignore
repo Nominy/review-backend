@@ -1,0 +1,20 @@
+.env
+.env.*
+!.env.example
+
+node_modules/
+logs/
+
+dist/
+build/
+coverage/
+.cache/
+tmp/
+
+*.log
+
+.DS_Store
+Thumbs.db
+
+# Local artifact accidentally generated in this workspace.
+NUL
