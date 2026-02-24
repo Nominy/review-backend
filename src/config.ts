@@ -1,3 +1,7 @@
+import { loadDefaultEnvFiles } from "./load-env";
+
+loadDefaultEnvFiles();
+
 function requireEnv(name: string): string {
   const value = (process.env[name] || "").trim();
   if (!value) {

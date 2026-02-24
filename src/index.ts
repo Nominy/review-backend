@@ -20,8 +20,93 @@ type SubmitTranscriptReviewActionBody = PrepareBody & {
   metadata?: Record<string, unknown>;
 };
 
+type CreditsSnapshot = {
+  total: number | null;
+  used: number | null;
+  remaining: number | null;
+  line: string;
+  error?: string;
+};
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function toFiniteNumber(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function fmtCredits(value: number | null): string {
+  return value === null ? "?" : value.toFixed(4);
+}
+
+function funnyCreditsLine(remaining: number | null): string {
+  if (remaining === null) return "Wallet status: classified paperwork.";
+  if (remaining <= 0) return "Wallet status: ramen mode engaged.";
+  if (remaining < 1) return "Wallet status: fumes, but still rolling.";
+  if (remaining < 10) return "Wallet status: comfy, no panic.";
+  return "Wallet status: credits are chilling.";
+}
+
+async function fetchOpenRouterCredits(apiKey: string): Promise<CreditsSnapshot> {
+  if (!apiKey.trim()) {
+    return {
+      total: null,
+      used: null,
+      remaining: null,
+      line: "Wallet status: test mode, imaginary money."
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+
+  try {
+    const response = await fetch("https://openrouter.ai/api/v1/credits", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`
+      },
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenRouter HTTP ${response.status}`);
+    }
+
+    const json = (await response.json()) as unknown;
+    const data = isObject(json) && isObject(json.data) ? json.data : {};
+
+    const total = toFiniteNumber(
+      data.total_credits ?? data.totalCredits ?? data.total ?? data.credits
+    );
+    const used = toFiniteNumber(data.total_usage ?? data.totalUsage ?? data.used_credits ?? data.used);
+    const remaining = toFiniteNumber(
+      data.remaining_credits ??
+        data.remainingCredits ??
+        (total !== null && used !== null ? total - used : Number.NaN)
+    );
+
+    return {
+      total,
+      used,
+      remaining,
+      line: `OpenRouter credits: total=${fmtCredits(total)}, remaining=${fmtCredits(
+        remaining
+      )}. ${funnyCreditsLine(remaining)}`
+    };
+  } catch (error) {
+    return {
+      total: null,
+      used: null,
+      remaining: null,
+      line: "OpenRouter credits: unavailable. Wallet taking a coffee break.",
+      error: error instanceof Error ? error.message : String(error)
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function assertPrepareBody(body: unknown): asserts body is PrepareBody {
@@ -67,12 +152,16 @@ const app = new Elysia()
     docs: "/health",
     now: new Date().toISOString()
   }))
-  .get("/health", () => ({
-    ok: true,
-    service: "babel-review-backend",
-    testMode: config.openRouterTestMode,
-    now: new Date().toISOString()
-  }))
+  .get("/health", async () => {
+    const credits = await fetchOpenRouterCredits(config.openRouterApiKey);
+    return {
+      ok: true,
+      service: "babel-review-backend",
+      testMode: config.openRouterTestMode,
+      now: new Date().toISOString(),
+      openRouterCredits: credits
+    };
+  })
   .post("/api/review/prepare", ({ body, set }) => {
     try {
       assertPrepareBody(body);

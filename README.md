@@ -6,14 +6,14 @@ Server-side review engine for the extension.
 
 ```bash
 cd review-backend
-cp .env.example .env
-# edit .env and set OPENROUTER_API_KEY
+cp .env.runtime.example .env.runtime
+# edit .env.runtime and set OPENROUTER_API_KEY
 bun install
 bun run dev
 ```
 
 Notes:
-- Bun auto-loads `.env` in dev/runtime.
+- This project loads `.env.runtime` from app code (`src/load-env.ts`) and runs Bun with `--no-env-file` as a workaround for a Bun dotenv crash on some environments.
 - `OPENROUTER_API_KEY` is required when `OPENROUTER_TEST_MODE=false`.
 - `OPENROUTER_MODEL` is optional (defaults to `openai/gpt-oss-120b`).
 - `OPENROUTER_TEST_MODE` is optional (`false` by default). Set `true` to skip OpenRouter and return mock feedback (`test test test`, scores `1/2/3`).
