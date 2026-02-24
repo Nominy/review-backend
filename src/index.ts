@@ -1,6 +1,10 @@
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
-import { buildPreparedPayload, generateFeedback } from "./service";
+import {
+  buildPreparedPayload,
+  generateFeedback,
+  submitTranscriptReviewActionAnalytics
+} from "./service";
 import { config } from "./config";
 import type { NormalizedState } from "./types";
 
@@ -8,6 +12,12 @@ type PrepareBody = {
   reviewActionId: string;
   original: NormalizedState;
   current: NormalizedState;
+};
+
+type SubmitTranscriptReviewActionBody = PrepareBody & {
+  inputBoxes?: Record<string, unknown>;
+  aiReview?: unknown;
+  metadata?: Record<string, unknown>;
 };
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -26,6 +36,21 @@ function assertPrepareBody(body: unknown): asserts body is PrepareBody {
 
 function assertGenerateBody(body: unknown): asserts body is PrepareBody {
   assertPrepareBody(body);
+}
+
+function assertSubmitTranscriptReviewActionBody(
+  body: unknown
+): asserts body is SubmitTranscriptReviewActionBody {
+  assertPrepareBody(body);
+  if (!isObject(body)) {
+    throw new Error("Body must be an object.");
+  }
+  if (body.inputBoxes !== undefined && !isObject(body.inputBoxes)) {
+    throw new Error("inputBoxes must be an object when provided.");
+  }
+  if (body.metadata !== undefined && !isObject(body.metadata)) {
+    throw new Error("metadata must be an object when provided.");
+  }
 }
 
 const app = new Elysia()
@@ -70,6 +95,40 @@ const app = new Elysia()
         reviewActionId: body.reviewActionId,
         original: body.original,
         current: body.current
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      set.status = msg.includes("required") || msg.includes("Body") ? 400 : 500;
+      return { error: msg };
+    }
+  })
+  .post("/api/trpc/transcriptions.submitTranscriptReviewAction", async ({ body, set }) => {
+    try {
+      assertSubmitTranscriptReviewActionBody(body);
+      return await submitTranscriptReviewActionAnalytics({
+        reviewActionId: body.reviewActionId,
+        original: body.original,
+        current: body.current,
+        inputBoxes: body.inputBoxes,
+        aiReview: body.aiReview,
+        metadata: body.metadata
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      set.status = msg.includes("required") || msg.includes("Body") ? 400 : 500;
+      return { error: msg };
+    }
+  })
+  .post("/api/analytics/submit-transcript-review-action", async ({ body, set }) => {
+    try {
+      assertSubmitTranscriptReviewActionBody(body);
+      return await submitTranscriptReviewActionAnalytics({
+        reviewActionId: body.reviewActionId,
+        original: body.original,
+        current: body.current,
+        inputBoxes: body.inputBoxes,
+        aiReview: body.aiReview,
+        metadata: body.metadata
       });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);

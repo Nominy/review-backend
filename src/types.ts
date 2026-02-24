@@ -68,3 +68,9 @@ export type GenerateResponse = {
   };
 };
 
+export type SubmitTranscriptReviewAnalyticsResponse = {
+  ok: true;
+  savedAt: string;
+  reviewActionId: string;
+  prepared: PreparedPayload;
+};

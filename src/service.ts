@@ -4,7 +4,13 @@ import { sendToOpenRouter } from "./openrouter";
 import { config } from "./config";
 import { CATEGORIES } from "./rules";
 import { logReviewTextPair } from "./review-pair-logger";
-import type { GenerateResponse, NormalizedState, PreparedPayload } from "./types";
+import { logReviewAnalytics } from "./analytics-logger";
+import type {
+  GenerateResponse,
+  NormalizedState,
+  PreparedPayload,
+  SubmitTranscriptReviewAnalyticsResponse
+} from "./types";
 
 export function buildPreparedPayload(input: {
   reviewActionId: string;
@@ -19,6 +25,37 @@ export function buildPreparedPayload(input: {
     featurePacket: computed.featurePacket,
     prompts
   };
+}
+
+async function safeLogAnalytics(input: {
+  reviewActionId: string;
+  original: NormalizedState;
+  current: NormalizedState;
+  prepared: PreparedPayload;
+  aiReview?: unknown;
+  inputBoxes?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  eventType: "review_generate" | "submit_transcript_review_action";
+}): Promise<void> {
+  try {
+    await logReviewAnalytics({
+      eventType: input.eventType,
+      reviewActionId: input.reviewActionId,
+      original: input.original,
+      current: input.current,
+      prepared: input.prepared,
+      aiReview: input.aiReview,
+      inputBoxes: input.inputBoxes,
+      metadata: input.metadata,
+      logPath: config.analyticsLogPath
+    });
+  } catch (error) {
+    console.error(
+      `[babel-review-backend] failed to write analytics log: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
 }
 
 export async function generateFeedback(input: {
@@ -51,7 +88,7 @@ export async function generateFeedback(input: {
       note: "test test test"
     }));
 
-    return {
+    const result: GenerateResponse = {
       prepared,
       llm: {
         feedback: mockFeedback,
@@ -61,6 +98,18 @@ export async function generateFeedback(input: {
         receivedAt: new Date().toISOString()
       }
     };
+
+    await safeLogAnalytics({
+      eventType: "review_generate",
+      reviewActionId: input.reviewActionId,
+      original: input.original,
+      current: input.current,
+      prepared: result.prepared,
+      aiReview: result.llm,
+      metadata: { source: "generateFeedback", testMode: true }
+    });
+
+    return result;
   }
 
   const llm = await sendToOpenRouter({
@@ -69,8 +118,53 @@ export async function generateFeedback(input: {
     prompts: prepared.prompts
   });
 
-  return {
+  const result: GenerateResponse = {
     prepared,
     llm
+  };
+
+  await safeLogAnalytics({
+    eventType: "review_generate",
+    reviewActionId: input.reviewActionId,
+    original: input.original,
+    current: input.current,
+    prepared: result.prepared,
+    aiReview: result.llm,
+    metadata: { source: "generateFeedback", testMode: false }
+  });
+
+  return result;
+}
+
+export async function submitTranscriptReviewActionAnalytics(input: {
+  reviewActionId: string;
+  original: NormalizedState;
+  current: NormalizedState;
+  inputBoxes?: Record<string, unknown>;
+  aiReview?: unknown;
+  metadata?: Record<string, unknown>;
+}): Promise<SubmitTranscriptReviewAnalyticsResponse> {
+  const prepared = buildPreparedPayload({
+    reviewActionId: input.reviewActionId,
+    original: input.original,
+    current: input.current
+  });
+
+  await safeLogAnalytics({
+    eventType: "submit_transcript_review_action",
+    reviewActionId: input.reviewActionId,
+    original: input.original,
+    current: input.current,
+    prepared,
+    aiReview: input.aiReview ?? null,
+    inputBoxes: input.inputBoxes ?? {},
+    metadata: input.metadata ?? {}
+  });
+
+  return {
+    ok: true,
+    savedAt: new Date().toISOString(),
+    reviewActionId: input.reviewActionId,
+    prepared
   };
 }

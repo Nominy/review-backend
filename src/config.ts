@@ -41,6 +41,7 @@ export const config = {
   openRouterApiKey: openRouterTestMode ? optionalEnv("OPENROUTER_API_KEY", "") : requireEnv("OPENROUTER_API_KEY"),
   openRouterModel: optionalEnv("OPENROUTER_MODEL", "openai/gpt-oss-120b"),
   reviewPairLogPath: optionalEnv("REVIEW_PAIR_LOG_PATH", "logs/review-text-pairs.jsonl"),
+  analyticsLogPath: optionalEnv("ANALYTICS_LOG_PATH", "logs/review-analytics.jsonl"),
   publicBaseUrl: optionalEnv("PUBLIC_BASE_URL", defaultPublicBaseUrl),
   corsOrigin: parseCorsOriginEnv("CORS_ALLOWED_ORIGINS")
 };

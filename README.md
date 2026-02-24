@@ -18,6 +18,7 @@ Notes:
 - `OPENROUTER_MODEL` is optional (defaults to `openai/gpt-oss-120b`).
 - `OPENROUTER_TEST_MODE` is optional (`false` by default). Set `true` to skip OpenRouter and return mock feedback (`test test test`, scores `1/2/3`).
 - `REVIEW_PAIR_LOG_PATH` is optional (defaults to `logs/review-text-pairs.jsonl`).
+- `ANALYTICS_LOG_PATH` is optional (defaults to `logs/review-analytics.jsonl`).
 - `HOST` is optional (defaults to `127.0.0.1`).
 - `PORT` is optional (defaults to `3001`).
 - `PUBLIC_BASE_URL` is optional (for logs/visibility; defaults to `http://<HOST>:<PORT>`).
@@ -30,6 +31,15 @@ Each `POST /api/review/generate` call appends one JSON line with:
 - `originalText` (joined from `original.annotations[].content`)
 - `reviewedText` (joined from `current.annotations[].content`)
 - `loggedAt`, `originalCapturedAt`, `currentCapturedAt`
+
+Each analytics event appends one JSON line to `ANALYTICS_LOG_PATH` with:
+- event type (`review_generate` or `submit_transcript_review_action`)
+- full `original` and `current` normalized states
+- extracted `originalText` and `currentText`
+- computed metrics (`stats` + `featurePacket`)
+- `aiReview` payload (when available)
+- `inputBoxes` snapshot (user correction fields at submit time)
+- metadata (source/status/timestamps)
 
 Default URL: `http://127.0.0.1:3001`
 
@@ -54,6 +64,8 @@ After this, extension can call `https://reviewgen.ovh/api/review/generate`.
 - `GET /health`
 - `POST /api/review/prepare`
 - `POST /api/review/generate`
+- `POST /api/trpc/transcriptions.submitTranscriptReviewAction`
+- `POST /api/analytics/submit-transcript-review-action`
 
 ## `POST /api/review/prepare` body
 
@@ -82,6 +94,30 @@ Returns prepared payload with `stats`, `featurePacket`, and `prompts`.
   "reviewActionId": "uuid",
   "original": {},
   "current": {}
+}
+```
+
+## `POST /api/trpc/transcriptions.submitTranscriptReviewAction` body
+
+```json
+{
+  "reviewActionId": "uuid",
+  "original": {},
+  "current": {},
+  "inputBoxes": {},
+  "aiReview": {},
+  "metadata": {}
+}
+```
+
+Returns:
+
+```json
+{
+  "ok": true,
+  "savedAt": "2026-02-24T00:00:00.000Z",
+  "reviewActionId": "uuid",
+  "prepared": {}
 }
 ```
 
