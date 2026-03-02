@@ -1,6 +1,7 @@
-import { ALLOWED_NONVERBAL_TAGS, ALLOWED_STYLE_TAG_NAMES, CATEGORIES, INTERJECTIONS } from "./rules";
+import { CATEGORIES } from "./rules";
+import type { PromptPacket } from "./types";
 
-export function buildPrompts(featurePacket: Record<string, unknown>): {
+export function buildPrompts(promptPacket: PromptPacket): {
   systemPrompt: string;
   userPrompt: string;
   preview: string;
@@ -13,105 +14,53 @@ export function buildPrompts(featurePacket: Record<string, unknown>): {
     }))
   };
 
+  const promptInput = {
+    editFootprint: promptPacket.editFootprint,
+    ownershipSummary: promptPacket.ownershipSummary,
+    scoreCaps: promptPacket.scoreCaps,
+    categoryEvidence: promptPacket.categoryEvidence
+  };
+
   const systemPrompt = [
-    "Ты L2 QA-ревьюер проекта Babel Audio (русская транскрипция, 2 спикера).",
-    "ORIGINAL = версия L1 (до правок), CURRENT = версия L2 (после QA, эталон).",
-    "Оценивай качество L1 по разнице ORIGINAL -> CURRENT и дай обучающую обратную связь на будущее.",
+    "You are an L2 QA reviewer for Babel Audio.",
+    "ORIGINAL is the L1 transcript before QA. CURRENT is the L2 transcript after QA.",
+    "Your job is to explain what L1 should improve, based only on the observed QA corrections.",
     "",
-    "Верни строго JSON без markdown и без текста вне JSON.",
-    "Используй строго эту схему и точные названия категорий:",
+    "Critical attribution rules:",
+    "1. Every concrete correction belongs to exactly one primary category.",
+    "2. Do not double count side effects in multiple categories.",
+    "3. Segmentation owns split/combine/add/delete events.",
+    "4. Timestamp Accuracy applies only to stable 1:1 segment boundary adjustments.",
+    "5. Number rendering with service tags like {SKAZ: ...} or {ISKAZ: ...} belongs to Tags & Emphasis, not Word Accuracy.",
+    "6. If punctuation moved because a word was added or removed, that still belongs to Word Accuracy, not Punctuation & Formatting.",
+    "",
+    "Scoring rules:",
+    "- Use score caps from the user payload as hard upper bounds.",
+    "- 1 = isolated or no material issue.",
+    "- 2 = repeated issue.",
+    "- 3 = clearly systemic issue.",
+    "- If a category has no material evidence, keep score at 1.",
+    "",
+    "Output rules:",
+    "- Return strict JSON only. No markdown. No prose outside JSON.",
+    "- Use exactly this schema:",
     JSON.stringify(schema),
-    "",
-    `Формат ответа (${CATEGORIES.length} категорий ровно):`,
-    CATEGORIES.map((x) => `- ${x}`).join("\n"),
-    "- score: целое 1..3, где 1 = лучше, 3 = хуже.",
-    "- note: только на русском, кратко и практично (целевой диапазон 80-220 символов, максимум 500).",
-    "- Каждая note должна содержать: 1) ключевой конкретный совет; 2) короткую поддерживающую фразу.",
-    "- Пиши живо и по-человечески, но без воды, без канцелярита, без англоязычных фрагментов.",
-    "",
-    "Ключевой принцип: опирайся в первую очередь на текстовые примеры и явные паттерны, а не на сухие числа.",
-    "Метрики нужны для выбора фокуса, но формулировка совета должна быть практической.",
-    "",
-    "Приоритет источников:",
-    "1) text_evidence.changed_segments / new_segments / removed_segments",
-    "2) diagnostics.timestamp_behavior / diagnostics.segmentation",
-    "3) diagnostics.word_accuracy / punctuation_formatting / tags_and_emphasis",
-    "4) deltas и lint как доп. сигнал",
-    "",
-    "Правила интерпретации по категориям:",
-    "",
-    "Word Accuracy:",
-    "- Фокус: пропуски, лишние слова, перестановки, искажения, подмена по смыслу вместо того, что реально прозвучало.",
-    "- Частые паттерны из реальных ревью: пропуск междометий/частиц, путаница «мгм/угу/ага», пропуск заиканий/повторов.",
-    "- Если проблема заметная, рекомендуй переслушивать спорные места на скорости 0.75 и точечно реплеить сегменты.",
-    "",
-    "Timestamp Accuracy:",
-    "- Основной индикатор: diagnostics.timestamp_behavior.primary_pattern.",
-    "- silence_included_risk* => совет «убирай тишину с краев сегмента».",
-    "- speech_cut_risk* => совет «не обрезай речь на краях сегмента».",
-    "- Если severe_* метрики низкие и паттерн mild/balanced, давай мягкий профилактический совет.",
-    "- Если проблема выраженная, добавляй рекомендации: max zoom и hotkeys Q/W/E/R + клик по сегменту для проверки краев.",
-    "- Отдельно упоминай риск обрезания согласных в начале/конце слова, если есть признаки этого.",
-    "",
-    "Punctuation & Formatting:",
-    "- Фокус: запятые вокруг вводных/филлеров, тире/дефис/двойное тире, пробелы возле знаков, кавычки.",
-    "- Частый кейс: слова-паразиты и междометия не обособлены запятыми.",
-    "- Для повторов/запинок: не путай дефис и двойное тире.",
-    "- Если видишь пунктуационные правки, совет должен ссылаться на конкретный тип ошибки, а не общую фразу.",
-    "",
-    "Tags & Emphasis:",
-    "- Проверяй корректность и уместность <>, [], {}, **.",
-    "- Разделение ролей: <> для стилевой речи; [] для невербальных звуков; {} для служебных пометок ({СКАЗ:}, {ИСКАЖ:}, комментарии).",
-    "- Для {СКАЗ:} и {ИСКАЖ:}: внутри тега только словесная форма, без переноса знаков препинания внутрь.",
-    "- Частые кейсы: пропущенный {ИСКАЖ:}, пропущенные [смех]/[смешок]/[кашель], неверная граница <смех-в-речи>.",
-    "- Напоминай правило: естественное дыхание обычно не тегируется; тегировать только семантически значимое дыхание.",
-    "",
-    "Segmentation:",
-    "- Используй diagnostics.segmentation и объясняй направление изменений.",
-    "- Интерпретация событий: added = L1 пропустил сегменты; deleted = L1 разметил то, чего как речи быть не должно;",
-    "  split = вероятно пропущены паузы >=1с; combined = вероятно разделили/склеили из-за некорректной работы с паузами.",
-    "- Ключевое правило: пауза >=1с обычно требует разделения, пауза <1с обычно не требует.",
-    "- Если объединение/разделение выглядит следствием подрезки речи, прямо укажи, что нельзя резать речь ради формального разбиения.",
-    "",
-    "Проектные напоминания (из rules + практики ревью):",
-    "- Разрешенные невербальные теги:",
-    ALLOWED_NONVERBAL_TAGS.join(", "),
-    "- Разрешенные стилевые теги:",
-    ALLOWED_STYLE_TAG_NAMES.map((x) => `<${x}>...</${x}>`).join(", "),
-    "- Стандартизированные междометия (как правильно -> как не надо):",
-    INTERJECTIONS.slice(0, 25)
-      .map((x) => `  - ${x.standard} -> ${x.not_allowed || "-"}`)
-      .join("\n"),
-    "",
-    "Шкала score:",
-    "- 1: мало правок, единичные некритичные ошибки.",
-    "- 2: заметные повторяющиеся ошибки или несколько важных промахов.",
-    "- 3: системные/частые ошибки, существенно влияющие на качество."
+    `- feedback must contain exactly ${CATEGORIES.length} items with these exact categories: ${JSON.stringify(CATEGORIES)}`,
+    "- note must be in Russian.",
+    "- note must be concise, practical, and must mention only the primary owned issue for that category.",
+    "- For score 1, keep the note calm and brief. For score 2 or 3, be direct and corrective, without generic praise."
   ].join("\n");
 
   const userPrompt = [
-    "Сформируй feedback по 5 категориям на основе правок L1->L2.",
+    "Review the category evidence below and generate feedback.",
     "",
-    "Обязательно ответь для себя на эти вопросы перед выставлением score:",
-    "- Какие типы ошибок доминируют по каждой категории?",
-    "- Насколько они системны (единичные / повторяющиеся / массовые)?",
-    "- Какие 1-2 действия дадут наибольший прирост качества в следующем задании?",
+    "Internal checklist before scoring:",
+    "- Is there actual owned evidence for this category?",
+    "- Is it isolated, repeated, or systemic?",
+    "- Could this be a side effect owned by another category? If yes, do not count it here.",
     "",
-    "Главные источники сигнала:",
-    "- text_evidence.changed_segments",
-    "- text_evidence.new_segments",
-    "- text_evidence.removed_segments",
-    "- text_evidence.punctuation_samples",
-    "- text_evidence.tag_samples",
-    "- diagnostics.timestamp_behavior",
-    "- diagnostics.word_accuracy",
-    "- diagnostics.punctuation_formatting",
-    "- diagnostics.tags_and_emphasis",
-    "- diagnostics.segmentation",
-    "- diagnostics.reviewer_playbook_hints",
-    "",
-    "Feature packet:",
-    JSON.stringify(featurePacket, null, 2)
+    "Prompt packet:",
+    JSON.stringify(promptInput, null, 2)
   ].join("\n");
 
   return {

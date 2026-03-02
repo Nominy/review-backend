@@ -18,11 +18,14 @@ export function buildPreparedPayload(input: {
   current: NormalizedState;
 }): PreparedPayload {
   const computed = computeReviewMetrics(input.original, input.current, input.reviewActionId);
-  const prompts = buildPrompts(computed.featurePacket);
+  const prompts = buildPrompts(computed.promptPacket);
   return {
     preparedAt: new Date().toISOString(),
     stats: computed.stats,
     featurePacket: computed.featurePacket,
+    promptPacket: computed.promptPacket,
+    metricsVersion: computed.metricsVersion,
+    promptVersion: computed.promptPacket.session.promptVersion,
     prompts
   };
 }

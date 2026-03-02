@@ -17,6 +17,10 @@ type ReviewAnalyticsLogEntry = {
   metricsAnalysis: {
     stats: Record<string, unknown>;
     featurePacket: Record<string, unknown>;
+    promptPacket: Record<string, unknown>;
+    metricsVersion: string;
+    promptVersion: string;
+    promptInputChars: number;
   };
   aiReview: unknown;
   inputBoxes: Record<string, unknown>;
@@ -61,7 +65,11 @@ export async function logReviewAnalytics(input: {
     current: input.current,
     metricsAnalysis: {
       stats: input.prepared.stats,
-      featurePacket: input.prepared.featurePacket
+      featurePacket: input.prepared.featurePacket,
+      promptPacket: input.prepared.promptPacket,
+      metricsVersion: input.prepared.metricsVersion,
+      promptVersion: input.prepared.promptVersion,
+      promptInputChars: input.prepared.prompts.systemPrompt.length + input.prepared.prompts.userPrompt.length
     },
     aiReview: input.aiReview ?? null,
     inputBoxes: input.inputBoxes ?? {},

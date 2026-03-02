@@ -1,24 +1,17 @@
-import type { Annotation, NormalizedState } from "./types";
+import { classifyStablePair, toPromptSample, type EditAtom } from "./edit-attribution";
+import type { Annotation, CategoryName, NormalizedState, PromptCategoryEvidence, PromptPacket } from "./types";
+
+export const METRICS_VERSION = "v3";
+export const PROMPT_VERSION = "v3";
+
+type LinkSummary = {
+  oldToNew: Map<string, string[]>;
+  newToOld: Map<string, string[]>;
+  stablePairs: Array<{ oldId: string; newId: string }>;
+};
 
 function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
-}
-
-function countRegex(text: string, regex: RegExp): number {
-  const matches = text.match(regex);
-  return matches ? matches.length : 0;
-}
-
-function average(values: number[]): number {
-  if (!values.length) return 0;
-  return values.reduce((a, b) => a + b, 0) / values.length;
-}
-
-function percentile(values: number[], p: number): number {
-  if (!values.length) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const idx = Math.ceil((p / 100) * sorted.length) - 1;
-  return sorted[Math.max(0, Math.min(sorted.length - 1, idx))];
 }
 
 function round(value: number, digits = 0): number {
@@ -31,76 +24,142 @@ function clipText(text: string, maxLen: number): string {
   return `${text.slice(0, maxLen)}...`;
 }
 
-function detectLanguageHint(text: string): string {
-  if (!text) return "unknown";
-  const cyr = (text.match(/[\u0400-\u04FF]/g) || []).length;
-  const lat = (text.match(/[A-Za-z]/g) || []).length;
-  if (cyr > lat * 2) return "mostly-cyrillic";
-  if (lat > cyr * 2) return "mostly-latin";
-  return "mixed";
-}
-
-function durationMs(annotation: Annotation): number {
-  return Math.max(0, (annotation.endTimeInSeconds - annotation.startTimeInSeconds) * 1000);
-}
-
 function overlapMs(a: Annotation, b: Annotation): number {
   const start = Math.max(a.startTimeInSeconds, b.startTimeInSeconds);
   const end = Math.min(a.endTimeInSeconds, b.endTimeInSeconds);
   return Math.max(0, (end - start) * 1000);
 }
 
-function classifySeverityByRate(rate: number): "low" | "moderate" | "high" {
-  if (rate >= 0.35) return "high";
-  if (rate >= 0.15) return "moderate";
-  return "low";
+function durationMs(annotation: Annotation): number {
+  return Math.max(0, (annotation.endTimeInSeconds - annotation.startTimeInSeconds) * 1000);
 }
 
-function absMax(values: number[]): number {
-  if (!values.length) return 0;
-  return Math.max(...values.map((v) => Math.abs(v)));
-}
-
-type SegmentationGraphStats = {
-  addedSegments: number;
-  deletedSegments: number;
-  splitEvents: number;
-  combineEvents: number;
-  oldToNewLinksP95: number;
-  newToOldLinksP95: number;
-};
-
-function computeSegmentationGraphStats(oldAnnotations: Annotation[], newAnnotations: Annotation[]): SegmentationGraphStats {
-  const minOverlapForLinkMs = 120;
-  const oldToNewCounts = new Map<string, number>();
-  const newToOldCounts = new Map<string, number>();
+function buildLinks(oldAnnotations: Annotation[], newAnnotations: Annotation[]): LinkSummary {
+  const oldToNew = new Map<string, string[]>();
+  const newToOld = new Map<string, string[]>();
+  const oldStrongLinks = new Map<string, Array<{ id: string; overlap: number }>>();
+  const newStrongLinks = new Map<string, Array<{ id: string; overlap: number }>>();
 
   for (const oldSeg of oldAnnotations) {
-    oldToNewCounts.set(oldSeg.id, 0);
+    oldToNew.set(oldSeg.id, []);
+    oldStrongLinks.set(oldSeg.id, []);
   }
   for (const newSeg of newAnnotations) {
-    newToOldCounts.set(newSeg.id, 0);
+    newToOld.set(newSeg.id, []);
+    newStrongLinks.set(newSeg.id, []);
   }
 
   for (const oldSeg of oldAnnotations) {
     for (const newSeg of newAnnotations) {
-      const ov = overlapMs(oldSeg, newSeg);
-      if (ov < minOverlapForLinkMs) continue;
-      oldToNewCounts.set(oldSeg.id, (oldToNewCounts.get(oldSeg.id) || 0) + 1);
-      newToOldCounts.set(newSeg.id, (newToOldCounts.get(newSeg.id) || 0) + 1);
+      const overlap = overlapMs(oldSeg, newSeg);
+      const minDuration = Math.min(durationMs(oldSeg), durationMs(newSeg));
+      const strongEnough = overlap >= 120 && overlap >= minDuration * 0.25;
+      if (!strongEnough) continue;
+      oldToNew.get(oldSeg.id)?.push(newSeg.id);
+      newToOld.get(newSeg.id)?.push(oldSeg.id);
+      oldStrongLinks.get(oldSeg.id)?.push({ id: newSeg.id, overlap });
+      newStrongLinks.get(newSeg.id)?.push({ id: oldSeg.id, overlap });
     }
   }
 
-  const oldLinks = [...oldToNewCounts.values()];
-  const newLinks = [...newToOldCounts.values()];
+  const bestOldToNew = new Map<string, string>();
+  for (const [oldId, links] of oldStrongLinks.entries()) {
+    const best = [...links].sort((a, b) => b.overlap - a.overlap)[0];
+    if (best) bestOldToNew.set(oldId, best.id);
+  }
+
+  const bestNewToOld = new Map<string, string>();
+  for (const [newId, links] of newStrongLinks.entries()) {
+    const best = [...links].sort((a, b) => b.overlap - a.overlap)[0];
+    if (best) bestNewToOld.set(newId, best.id);
+  }
+
+  const stablePairs: Array<{ oldId: string; newId: string }> = [];
+  for (const [oldId, newId] of bestOldToNew.entries()) {
+    if (bestNewToOld.get(newId) !== oldId) continue;
+    stablePairs.push({ oldId, newId });
+  }
+
+  return { oldToNew, newToOld, stablePairs };
+}
+
+function emptyCategoryEvidence(): PromptCategoryEvidence {
+  return {
+    count: 0,
+    dominantKinds: [],
+    samples: []
+  };
+}
+
+function summarizeCategory(atoms: EditAtom[]): PromptCategoryEvidence {
+  if (!atoms.length) {
+    return emptyCategoryEvidence();
+  }
+
+  const kindCounts = new Map<string, number>();
+  for (const atom of atoms) {
+    kindCounts.set(atom.kind, (kindCounts.get(atom.kind) || 0) + 1);
+  }
+
+  const dominantKinds = [...kindCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 3)
+    .map(([kind]) => kind);
 
   return {
-    addedSegments: newLinks.filter((n) => n === 0).length,
-    deletedSegments: oldLinks.filter((n) => n === 0).length,
-    splitEvents: oldLinks.filter((n) => n >= 2).length,
-    combineEvents: newLinks.filter((n) => n >= 2).length,
-    oldToNewLinksP95: round(percentile(oldLinks, 95), 2),
-    newToOldLinksP95: round(percentile(newLinks, 95), 2)
+    count: atoms.length,
+    dominantKinds,
+    samples: atoms.slice(0, 3).map(toPromptSample)
+  };
+}
+
+function buildScoreCap(category: CategoryName, atoms: EditAtom[], isMicroEdit: boolean): 1 | 2 | 3 {
+  const count = atoms.length;
+  const materialOrWorse = atoms.filter((atom) => atom.severity !== "minor").length;
+  const severe = atoms.filter((atom) => atom.severity === "severe").length;
+
+  if (!count) return 1;
+  if (isMicroEdit && count <= 1) return 1;
+
+  let cap: 1 | 2 | 3 = 1;
+
+  switch (category) {
+    case "Word Accuracy":
+      if (severe >= 5 || materialOrWorse >= 5 || count >= 5) cap = 3;
+      else if (materialOrWorse >= 2 || count >= 2) cap = 2;
+      break;
+    case "Timestamp Accuracy":
+      if (severe >= 3) cap = 3;
+      else if (materialOrWorse >= 2) cap = 2;
+      break;
+    case "Punctuation & Formatting":
+      if (count >= 5) cap = 3;
+      else if (count >= 2) cap = 2;
+      break;
+    case "Tags & Emphasis":
+      if (count >= 4 || severe >= 4) cap = 3;
+      else if (count >= 2) cap = 2;
+      break;
+    case "Segmentation":
+      if (count >= 4 || severe >= 4) cap = 3;
+      else if (materialOrWorse >= 2 || count >= 2) cap = 2;
+      break;
+  }
+
+  if (isMicroEdit && cap === 3) {
+    return 2;
+  }
+
+  return cap;
+}
+
+function buildOwnershipSummary(grouped: Record<CategoryName, EditAtom[]>) {
+  return {
+    wordOwned: grouped["Word Accuracy"].length,
+    timestampOwned: grouped["Timestamp Accuracy"].length,
+    punctuationOwned: grouped["Punctuation & Formatting"].length,
+    tagsOwned: grouped["Tags & Emphasis"].length,
+    segmentationOwned: grouped["Segmentation"].length
   };
 }
 
@@ -108,371 +167,156 @@ export function computeReviewMetrics(
   original: NormalizedState,
   current: NormalizedState,
   actionId: string
-): { stats: Record<string, unknown>; featurePacket: Record<string, unknown> } {
+): {
+  stats: Record<string, unknown>;
+  featurePacket: Record<string, unknown>;
+  promptPacket: PromptPacket;
+  metricsVersion: string;
+} {
   const oldAnnotations = Array.isArray(original.annotations) ? original.annotations : [];
   const newAnnotations = Array.isArray(current.annotations) ? current.annotations : [];
+  const oldMap = new Map(oldAnnotations.map((annotation) => [annotation.id, annotation]));
+  const newMap = new Map(newAnnotations.map((annotation) => [annotation.id, annotation]));
+  const links = buildLinks(oldAnnotations, newAnnotations);
 
-  const oldMap = new Map(oldAnnotations.map((x) => [x.id, x]));
-  const newMap = new Map(newAnnotations.map((x) => [x.id, x]));
-  const matchedIds = [...oldMap.keys()].filter((id) => newMap.has(id));
-  const newOnly = [...newMap.keys()].filter((id) => !oldMap.has(id));
-  const removed = [...oldMap.keys()].filter((id) => !newMap.has(id));
+  const grouped: Record<CategoryName, EditAtom[]> = {
+    "Word Accuracy": [],
+    "Timestamp Accuracy": [],
+    "Punctuation & Formatting": [],
+    "Tags & Emphasis": [],
+    Segmentation: []
+  };
 
-  const startShiftsAbsMs: number[] = [];
-  const endShiftsAbsMs: number[] = [];
-  const startShiftSignedMs: number[] = [];
-  const endShiftSignedMs: number[] = [];
-  const durationDeltaSignedMs: number[] = [];
-
-  let changedSegments = 0;
-  let tokenInsertions = 0;
-  let tokenDeletions = 0;
-  let tokenReplacements = 0;
-
-  const evidence: Array<Record<string, unknown>> = [];
-  const changedSegmentsText: Array<Record<string, unknown>> = [];
-
-  for (const id of matchedIds) {
-    const before = oldMap.get(id);
-    const after = newMap.get(id);
-    if (!before || !after) continue;
-
-    const startShiftSigned = (after.startTimeInSeconds - before.startTimeInSeconds) * 1000;
-    const endShiftSigned = (after.endTimeInSeconds - before.endTimeInSeconds) * 1000;
-    const durDelta = durationMs(after) - durationMs(before);
-
-    startShiftSignedMs.push(startShiftSigned);
-    endShiftSignedMs.push(endShiftSigned);
-    startShiftsAbsMs.push(Math.abs(startShiftSigned));
-    endShiftsAbsMs.push(Math.abs(endShiftSigned));
-    durationDeltaSignedMs.push(durDelta);
-
-    const changed = before.content !== after.content;
-    if (!changed) continue;
-
-    changedSegments += 1;
-    const beforeWords = countWords(before.content || "");
-    const afterWords = countWords(after.content || "");
-    if (afterWords > beforeWords) tokenInsertions += afterWords - beforeWords;
-    if (beforeWords > afterWords) tokenDeletions += beforeWords - afterWords;
-    if (beforeWords > 0 && afterWords > 0) tokenReplacements += 1;
-
-    if (evidence.length < 6) {
-      evidence.push({
-        category_hint: "Word Accuracy",
-        annotationId: id,
-        time_after: [round(after.startTimeInSeconds, 3), round(after.endTimeInSeconds, 3)],
-        before: clipText(before.content || "", 280),
-        after: clipText(after.content || "", 280)
-      });
-    }
-
-    if (changedSegmentsText.length < 10) {
-      changedSegmentsText.push({
-        annotationId: id,
-        time_after: [round(after.startTimeInSeconds, 3), round(after.endTimeInSeconds, 3)],
-        before: clipText(before.content || "", 380),
-        after: clipText(after.content || "", 380)
+  const segmentCountDelta = newAnnotations.length - oldAnnotations.length;
+  if (segmentCountDelta !== 0) {
+    const anchor =
+      (segmentCountDelta > 0 ? newAnnotations[0] : oldAnnotations[0]) ??
+      oldAnnotations[0] ??
+      newAnnotations[0];
+    if (anchor) {
+      const absoluteDelta = Math.abs(segmentCountDelta);
+      grouped.Segmentation.push({
+        kind: segmentCountDelta > 0 ? "segment_count_increase" : "segment_count_decrease",
+        ownerCategory: "Segmentation",
+        severity: absoluteDelta >= 4 ? "severe" : absoluteDelta >= 2 ? "material" : "minor",
+        annotationId: anchor.id,
+        note:
+          segmentCountDelta > 0
+            ? `QA finished with ${absoluteDelta} more segments.`
+            : `QA finished with ${absoluteDelta} fewer segments.`,
+        before: segmentCountDelta < 0 ? clipText(anchor.content || "", 220) : undefined,
+        after: segmentCountDelta > 0 ? clipText(anchor.content || "", 220) : undefined
       });
     }
   }
 
-  const oldText = oldAnnotations.map((x) => x.content || "").join(" ");
-  const newText = newAnnotations.map((x) => x.content || "").join(" ");
-  const oldWordCount = countWords(oldText);
-  const newWordCount = countWords(newText);
+  let changedSegments = 0;
+  for (const pair of links.stablePairs) {
+    const before = oldMap.get(pair.oldId);
+    const after = newMap.get(pair.newId);
+    if (!before || !after) continue;
+    if ((before.content || "") !== (after.content || "")) {
+      changedSegments += 1;
+    }
 
-  const newSegmentsText = newOnly
-    .slice(0, 8)
-    .map((id) => newMap.get(id))
-    .filter(Boolean)
-    .map((seg) => ({
-      annotationId: seg!.id,
-      time_after: [round(seg!.startTimeInSeconds, 3), round(seg!.endTimeInSeconds, 3)],
-      text: clipText(seg!.content || "", 360)
-    }));
+    const atom = classifyStablePair(before, after);
+    if (!atom) continue;
+    grouped[atom.ownerCategory].push(atom);
+  }
 
-  const removedSegmentsText = removed
-    .slice(0, 8)
-    .map((id) => oldMap.get(id))
-    .filter(Boolean)
-    .map((seg) => ({
-      annotationId: seg!.id,
-      time_before: [round(seg!.startTimeInSeconds, 3), round(seg!.endTimeInSeconds, 3)],
-      text: clipText(seg!.content || "", 360)
-    }));
+  const stableMatchedSegments = links.stablePairs.length;
+  const changedSegmentRatio = stableMatchedSegments ? changedSegments / stableMatchedSegments : 0;
+  const ownershipSummary = buildOwnershipSummary(grouped);
+  const totalOwnedEdits =
+    ownershipSummary.wordOwned +
+    ownershipSummary.timestampOwned +
+    ownershipSummary.punctuationOwned +
+    ownershipSummary.tagsOwned +
+    ownershipSummary.segmentationOwned;
+  const hasSevereTiming = grouped["Timestamp Accuracy"].some((atom) => atom.severity === "severe");
+  const isMicroEdit =
+    changedSegmentRatio < 0.1 &&
+    Math.abs(segmentCountDelta) <= 1 &&
+    totalOwnedEdits <= 2 &&
+    !hasSevereTiming;
 
-  const lintAfter = Array.isArray(current.lintErrors) ? current.lintErrors : [];
-  const lintSamples = lintAfter.slice(0, 8).map((lint) => {
-    const seg = newMap.get(lint.annotationId);
-    return {
-      annotationId: lint.annotationId || "",
-      reason: lint.reason || "",
-      severity: lint.severity || "",
-      text: clipText(seg ? seg.content || "" : "", 320),
-      time_after: seg ? [round(seg.startTimeInSeconds, 3), round(seg.endTimeInSeconds, 3)] : null
-    };
-  });
-
-  const punctuationSegments = newAnnotations
-    .filter((seg) => /[.,!?;:]/.test(seg.content || ""))
-    .slice(0, 8)
-    .map((seg) => ({
-      annotationId: seg.id,
-      text: clipText(seg.content || "", 260),
-      punctuation_count: countRegex(seg.content || "", /[.,!?;:]/g),
-      time_after: [round(seg.startTimeInSeconds, 3), round(seg.endTimeInSeconds, 3)]
-    }));
-
-  const tagSegments = newAnnotations
-    .filter((seg) => /\[[^\]]+\]|\{[^}]+\}|<[^>]+>|\*\*[^*]+\*\*/.test(seg.content || ""))
-    .slice(0, 8)
-    .map((seg) => ({
-      annotationId: seg.id,
-      text: clipText(seg.content || "", 300),
-      time_after: [round(seg.startTimeInSeconds, 3), round(seg.endTimeInSeconds, 3)]
-    }));
-
-  const oldDur = oldAnnotations.map(durationMs);
-  const newDur = newAnnotations.map(durationMs);
-  const segmentationGraph = computeSegmentationGraphStats(oldAnnotations, newAnnotations);
-
-  const severeGrowthThresholdMs = 500;
-  const severeShrinkThresholdMs = -500;
-  const mildDurationDeltaThresholdMs = 120;
-
-  const grewCount = durationDeltaSignedMs.filter((x) => x >= mildDurationDeltaThresholdMs).length;
-  const shrankCount = durationDeltaSignedMs.filter((x) => x <= -mildDurationDeltaThresholdMs).length;
-  const severeGrewCount = durationDeltaSignedMs.filter((x) => x >= severeGrowthThresholdMs).length;
-  const severeShrankCount = durationDeltaSignedMs.filter((x) => x <= severeShrinkThresholdMs).length;
-
-  const matchedCount = matchedIds.length;
-  const grewRate = matchedCount ? grewCount / matchedCount : 0;
-  const shrankRate = matchedCount ? shrankCount / matchedCount : 0;
-  const severeGrewRate = matchedCount ? severeGrewCount / matchedCount : 0;
-  const severeShrankRate = matchedCount ? severeShrankCount / matchedCount : 0;
-
-  const timestampPrimaryPattern =
-    severeShrankRate > severeGrewRate
-      ? "speech_cut_risk"
-      : severeGrewRate > severeShrankRate
-        ? "silence_included_risk"
-        : shrankRate > grewRate
-          ? "speech_cut_risk_mild"
-          : grewRate > shrankRate
-            ? "silence_included_risk_mild"
-            : "balanced_or_minor";
-
-  const wordChangeMagnitude = tokenInsertions + tokenDeletions + tokenReplacements;
-  const wordChangeRate = matchedCount ? wordChangeMagnitude / Math.max(1, matchedCount) : 0;
-
-  const punctuationBefore = countRegex(oldText, /[.,!?;:]/g);
-  const punctuationAfter = countRegex(newText, /[.,!?;:]/g);
-
-  const punctuationSpacingBefore = {
-    spaces_before_comma: countRegex(oldText, /\s+,/g),
-    spaces_before_dot: countRegex(oldText, /\s+\./g),
-    spaces_before_colon: countRegex(oldText, /\s+:/g),
-    spaces_before_semicolon: countRegex(oldText, /\s+;/g),
-    no_space_after_punct: countRegex(oldText, /[.,!?;:][^\s\d\]\)}>"']/g)
+  const scoreCaps: Record<CategoryName, 1 | 2 | 3> = {
+    "Word Accuracy": buildScoreCap("Word Accuracy", grouped["Word Accuracy"], isMicroEdit),
+    "Timestamp Accuracy": buildScoreCap("Timestamp Accuracy", grouped["Timestamp Accuracy"], isMicroEdit),
+    "Punctuation & Formatting": buildScoreCap("Punctuation & Formatting", grouped["Punctuation & Formatting"], isMicroEdit),
+    "Tags & Emphasis": buildScoreCap("Tags & Emphasis", grouped["Tags & Emphasis"], isMicroEdit),
+    Segmentation: buildScoreCap("Segmentation", grouped.Segmentation, isMicroEdit)
   };
 
-  const punctuationSpacingAfter = {
-    spaces_before_comma: countRegex(newText, /\s+,/g),
-    spaces_before_dot: countRegex(newText, /\s+\./g),
-    spaces_before_colon: countRegex(newText, /\s+:/g),
-    spaces_before_semicolon: countRegex(newText, /\s+;/g),
-    no_space_after_punct: countRegex(newText, /[.,!?;:][^\s\d\]\)}>"']/g)
+  const promptPacket: PromptPacket = {
+    session: {
+      actionId,
+      metricsVersion: METRICS_VERSION,
+      promptVersion: PROMPT_VERSION
+    },
+    editFootprint: {
+      stableMatchedSegments,
+      changedSegments,
+      changedSegmentRatio: round(changedSegmentRatio, 4),
+      segmentCountDelta,
+      isMicroEdit
+    },
+    ownershipSummary,
+    categoryEvidence: {
+      wordAccuracy: summarizeCategory(grouped["Word Accuracy"]),
+      timestampAccuracy: summarizeCategory(grouped["Timestamp Accuracy"]),
+      punctuationFormatting: summarizeCategory(grouped["Punctuation & Formatting"]),
+      tagsEmphasis: summarizeCategory(grouped["Tags & Emphasis"]),
+      segmentation: summarizeCategory(grouped.Segmentation)
+    },
+    scoreCaps
   };
-
-  const squareBefore = countRegex(oldText, /\[[^\]]+\]/g);
-  const squareAfter = countRegex(newText, /\[[^\]]+\]/g);
-  const curlyBefore = countRegex(oldText, /\{[^}]+\}/g);
-  const curlyAfter = countRegex(newText, /\{[^}]+\}/g);
-  const angleBefore = countRegex(oldText, /<[^>]+>/g);
-  const angleAfter = countRegex(newText, /<[^>]+>/g);
-  const emphasisBefore = countRegex(oldText, /\*\*[^*]+\*\*/g);
-  const emphasisAfter = countRegex(newText, /\*\*[^*]+\*\*/g);
-  const breathingTagBefore = countRegex(oldText, /\[(?:дыхание|вдох|выдох|вздох|резкий-вздох)\]/gi);
-  const breathingTagAfter = countRegex(newText, /\[(?:дыхание|вдох|выдох|вздох|резкий-вздох)\]/gi);
-
-  const segmentationDelta = newAnnotations.length - oldAnnotations.length;
-  const segmentationDirection =
-    segmentationDelta > 0 ? "more_segments_after_l2" : segmentationDelta < 0 ? "fewer_segments_after_l2" : "same_count";
-
-  const segmentationDominantPattern = (() => {
-    const events = [
-      { key: "added", value: segmentationGraph.addedSegments },
-      { key: "deleted", value: segmentationGraph.deletedSegments },
-      { key: "split", value: segmentationGraph.splitEvents },
-      { key: "combined", value: segmentationGraph.combineEvents }
-    ].sort((a, b) => b.value - a.value);
-    if (!events[0] || events[0].value === 0) return "minor_or_none";
-    return events[0].key;
-  })();
 
   const featurePacket = {
-    session: { actionId },
-    deltas: {
-      segment_count_delta: segmentationDelta,
-      changed_segment_ratio: matchedCount ? round(changedSegments / matchedCount, 4) : 0,
-      new_segments: newOnly.length,
-      removed_segments: removed.length,
-      avg_segment_duration_delta_ms: round(average(newDur) - average(oldDur), 2),
-      timestamp_shift_start_ms: {
-        mean: round(average(startShiftsAbsMs), 2),
-        p95: round(percentile(startShiftsAbsMs, 95), 2),
-        max: round(Math.max(0, ...startShiftsAbsMs), 2),
-        signed_mean: round(average(startShiftSignedMs), 2)
-      },
-      timestamp_shift_end_ms: {
-        mean: round(average(endShiftsAbsMs), 2),
-        p95: round(percentile(endShiftsAbsMs, 95), 2),
-        max: round(Math.max(0, ...endShiftsAbsMs), 2),
-        signed_mean: round(average(endShiftSignedMs), 2)
-      },
-      token_insertions: tokenInsertions,
-      token_deletions: tokenDeletions,
-      token_replacements: tokenReplacements,
-      punctuation_delta: {
-        before: punctuationBefore,
-        after: punctuationAfter
-      },
-      punctuation_spacing_delta: {
-        before: punctuationSpacingBefore,
-        after: punctuationSpacingAfter
-      },
-      tag_delta: {
-        square_before: squareBefore,
-        square_after: squareAfter,
-        curly_before: curlyBefore,
-        curly_after: curlyAfter,
-        angle_before: angleBefore,
-        angle_after: angleAfter,
-        emphasis_before: emphasisBefore,
-        emphasis_after: emphasisAfter,
-        breathing_before: breathingTagBefore,
-        breathing_after: breathingTagAfter
-      }
+    session: promptPacket.session,
+    editFootprint: promptPacket.editFootprint,
+    segmentationGraph: {
+      addedSegments: Math.max(segmentCountDelta, 0),
+      deletedSegments: Math.max(-segmentCountDelta, 0),
+      splitEvents: 0,
+      combineEvents: 0
     },
-    diagnostics: {
-      word_accuracy: {
-        changed_segments: changedSegments,
-        matched_segments: matchedCount,
-        word_change_magnitude: wordChangeMagnitude,
-        word_change_rate_per_segment: round(wordChangeRate, 3),
-        severity: classifySeverityByRate(matchedCount ? changedSegments / Math.max(1, matchedCount) : 0)
-      },
-      timestamp_behavior: {
-        grew_count: grewCount,
-        shrank_count: shrankCount,
-        severe_grew_count: severeGrewCount,
-        severe_shrank_count: severeShrankCount,
-        grew_rate: round(grewRate, 3),
-        shrank_rate: round(shrankRate, 3),
-        severe_grew_rate: round(severeGrewRate, 3),
-        severe_shrank_rate: round(severeShrankRate, 3),
-        mean_duration_delta_ms: round(average(durationDeltaSignedMs), 2),
-        median_duration_delta_ms: round(percentile(durationDeltaSignedMs, 50), 2),
-        p95_abs_duration_delta_ms: round(percentile(durationDeltaSignedMs.map((x) => Math.abs(x)), 95), 2),
-        max_abs_duration_delta_ms: round(absMax(durationDeltaSignedMs), 2),
-        primary_pattern: timestampPrimaryPattern,
-        advice_hint:
-          timestampPrimaryPattern === "silence_included_risk" || timestampPrimaryPattern === "silence_included_risk_mild"
-            ? "focus_trim_silence"
-            : timestampPrimaryPattern === "speech_cut_risk" || timestampPrimaryPattern === "speech_cut_risk_mild"
-              ? "focus_do_not_cut_speech"
-              : "focus_minor_tweaks_only"
-      },
-      punctuation_formatting: {
-        punctuation_before: punctuationBefore,
-        punctuation_after: punctuationAfter,
-        punctuation_spacing_issue_before:
-          punctuationSpacingBefore.spaces_before_comma +
-          punctuationSpacingBefore.spaces_before_dot +
-          punctuationSpacingBefore.spaces_before_colon +
-          punctuationSpacingBefore.spaces_before_semicolon +
-          punctuationSpacingBefore.no_space_after_punct,
-        punctuation_spacing_issue_after:
-          punctuationSpacingAfter.spaces_before_comma +
-          punctuationSpacingAfter.spaces_before_dot +
-          punctuationSpacingAfter.spaces_before_colon +
-          punctuationSpacingAfter.spaces_before_semicolon +
-          punctuationSpacingAfter.no_space_after_punct
-      },
-      tags_and_emphasis: {
-        square_delta: squareAfter - squareBefore,
-        curly_delta: curlyAfter - curlyBefore,
-        angle_delta: angleAfter - angleBefore,
-        emphasis_delta: emphasisAfter - emphasisBefore,
-        breathing_delta: breathingTagAfter - breathingTagBefore
-      },
-      segmentation: {
-        segment_count_before: oldAnnotations.length,
-        segment_count_after: newAnnotations.length,
-        segment_count_delta: segmentationDelta,
-        segment_count_direction: segmentationDirection,
-        added_segments: segmentationGraph.addedSegments,
-        deleted_segments: segmentationGraph.deletedSegments,
-        split_events: segmentationGraph.splitEvents,
-        combine_events: segmentationGraph.combineEvents,
-        dominant_pattern: segmentationDominantPattern,
-        old_to_new_links_p95: segmentationGraph.oldToNewLinksP95,
-        new_to_old_links_p95: segmentationGraph.newToOldLinksP95
-      },
-      reviewer_playbook_hints: {
-        timestamp_tooling:
-          severeGrewCount + severeShrankCount >= 2
-            ? [
-                "recommend_max_zoom",
-                "recommend_hotkeys_q_w_e_r_segment_click",
-                "recommend_playback_0_75_for_hard_segments"
-              ]
-            : ["recommend_playback_0_75_for_hard_segments"],
-        segmentation_rule_hint: "split_only_when_pause_at_least_1s_do_not_cut_speech_to_force_split",
-        breathing_rule_hint: "avoid_tagging_natural_breathing_only_semantic_breaths"
-      }
-    },
-    lint: {
-      errors_before: Array.isArray(original.lintErrors) ? original.lintErrors.length : 0,
-      errors_after: Array.isArray(current.lintErrors) ? current.lintErrors.length : 0
-    },
-    text_evidence: {
-      language_hint: detectLanguageHint(newText),
-      transcript_before_excerpt: clipText(oldText, 1600),
-      transcript_after_excerpt: clipText(newText, 1600),
-      changed_segments: changedSegmentsText,
-      new_segments: newSegmentsText,
-      removed_segments: removedSegmentsText,
-      lint_samples: lintSamples,
-      punctuation_samples: punctuationSegments,
-      tag_samples: tagSegments
-    },
-    evidence
+    ownershipSummary,
+    categoryEvidence: promptPacket.categoryEvidence,
+    scoreCaps
   };
+
+  const oldText = oldAnnotations.map((annotation) => annotation.content || "").join(" ");
+  const newText = newAnnotations.map((annotation) => annotation.content || "").join(" ");
 
   const stats = {
     original: {
       annotations: oldAnnotations.length,
-      words: oldWordCount,
-      lintErrors: featurePacket.lint.errors_before
+      words: countWords(oldText),
+      lintErrors: Array.isArray(original.lintErrors) ? original.lintErrors.length : 0
     },
     current: {
       annotations: newAnnotations.length,
-      words: newWordCount,
-      lintErrors: featurePacket.lint.errors_after
+      words: countWords(newText),
+      lintErrors: Array.isArray(current.lintErrors) ? current.lintErrors.length : 0
     },
     changes: {
-      matched: matchedCount,
+      stableMatchedSegments,
       changedSegments,
-      newSegments: newOnly.length,
-      removedSegments: removed.length,
-      startShiftMeanMs: featurePacket.deltas.timestamp_shift_start_ms.mean,
-      endShiftMeanMs: featurePacket.deltas.timestamp_shift_end_ms.mean,
-      timestampPrimaryPattern,
-      segmentationDominantPattern
+      changedSegmentRatio: round(changedSegmentRatio, 4),
+      segmentCountDelta,
+      isMicroEdit,
+      ownershipSummary,
+      scoreCaps,
+      previewBefore: clipText(oldText, 240),
+      previewAfter: clipText(newText, 240)
     }
   };
 
-  return { stats, featurePacket };
+  return {
+    stats,
+    featurePacket,
+    promptPacket,
+    metricsVersion: METRICS_VERSION
+  };
 }
