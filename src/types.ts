@@ -5,6 +5,11 @@ export type CategoryName =
   | "Tags & Emphasis"
   | "Segmentation";
 
+export type FeedbackItem = {
+  category: CategoryName;
+  note: string;
+};
+
 export type Annotation = {
   id: string;
   reviewActionId: string;
@@ -41,22 +46,30 @@ export type NormalizedState = {
   capturedAt: string;
 };
 
-export type EditSeverity = "minor" | "material" | "severe";
-
-export type PromptSample = {
-  kind: string;
-  severity: EditSeverity;
-  annotationId: string;
-  linkedAnnotationId?: string;
-  note: string;
-  before?: string;
-  after?: string;
+export type PromptTextDiff = {
+  oldId: string;
+  newId: string;
+  before: string;
+  after: string;
+  oldStartTimeInSeconds: number;
+  oldEndTimeInSeconds: number;
+  newStartTimeInSeconds: number;
+  newEndTimeInSeconds: number;
 };
 
-export type PromptCategoryEvidence = {
-  count: number;
-  dominantKinds: string[];
-  samples: PromptSample[];
+export type PromptTimingDiff = {
+  oldId: string;
+  newId: string;
+  text: string;
+  startShiftMs: number;
+  endShiftMs: number;
+};
+
+export type PromptSegmentSample = {
+  id: string;
+  text: string;
+  startTimeInSeconds: number;
+  endTimeInSeconds: number;
 };
 
 export type PromptPacket = {
@@ -65,28 +78,54 @@ export type PromptPacket = {
     metricsVersion: string;
     promptVersion: string;
   };
-  editFootprint: {
-    stableMatchedSegments: number;
-    changedSegments: number;
-    changedSegmentRatio: number;
+  overview: {
+    originalSegments: number;
+    currentSegments: number;
+    stablePairs: number;
+    textDiffCount: number;
+    timingDiffCount: number;
+    unmatchedOriginalCount: number;
+    unmatchedCurrentCount: number;
+  };
+  textDiffs: PromptTextDiff[];
+  timingDiffs: PromptTimingDiff[];
+  segmentationDiffs: {
     segmentCountDelta: number;
-    isMicroEdit: boolean;
+    unmatchedOriginal: PromptSegmentSample[];
+    unmatchedCurrent: PromptSegmentSample[];
   };
-  ownershipSummary: {
-    wordOwned: number;
-    timestampOwned: number;
-    punctuationOwned: number;
-    tagsOwned: number;
-    segmentationOwned: number;
-  };
-  categoryEvidence: {
-    wordAccuracy: PromptCategoryEvidence;
-    timestampAccuracy: PromptCategoryEvidence;
-    punctuationFormatting: PromptCategoryEvidence;
-    tagsEmphasis: PromptCategoryEvidence;
-    segmentation: PromptCategoryEvidence;
-  };
-  scoreCaps: Record<CategoryName, 1 | 2 | 3>;
+};
+
+export type TemplateCategory = CategoryName;
+
+export type TemplateDefinition = {
+  id: string;
+  description: string;
+  reportText: string;
+  priority: number;
+  enabled: boolean;
+};
+
+export type ReviewTemplate = TemplateDefinition & {
+  category: TemplateCategory;
+};
+
+export type TemplateRegistryFile = {
+  category: TemplateCategory;
+  version: number;
+  defaultText: string;
+  templates: TemplateDefinition[];
+};
+
+export type TemplatePromptEntry = {
+  id: string;
+  description: string;
+};
+
+export type TemplatePromptCatalog = Record<TemplateCategory, TemplatePromptEntry[]>;
+
+export type TemplateSelectionResponse = {
+  findings: string[];
 };
 
 export type PreparedPayload = {
@@ -106,15 +145,13 @@ export type PreparedPayload = {
 export type GenerateResponse = {
   prepared: PreparedPayload;
   llm: {
-    feedback: Array<{
-      category: CategoryName;
-      score: number;
-      note: string;
-    }>;
+    feedback: FeedbackItem[];
     rawContent: string;
     model: string;
     latencyMs: number;
     receivedAt: string;
+    matchedTemplateIds: string[];
+    templateRegistryVersion: string;
     repaired?: boolean;
   };
 };

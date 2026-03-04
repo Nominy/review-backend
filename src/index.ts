@@ -171,10 +171,9 @@ const app = new Elysia()
         current: body.current
       });
     } catch (error) {
-      set.status = 400;
-      return {
-        error: error instanceof Error ? error.message : String(error)
-      };
+      const msg = error instanceof Error ? error.message : String(error);
+      set.status = msg.includes("required") || msg.includes("Body") ? 400 : 500;
+      return { error: msg };
     }
   })
   .post("/api/review/generate", async ({ body, set }) => {

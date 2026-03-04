@@ -2,9 +2,10 @@ import { computeReviewMetrics } from "./metrics";
 import { buildPrompts } from "./prompt";
 import { sendToOpenRouter } from "./openrouter";
 import { config } from "./config";
-import { CATEGORIES } from "./rules";
 import { logReviewTextPair } from "./review-pair-logger";
 import { logReviewAnalytics } from "./analytics-logger";
+import { getTemplateRegistry } from "./template-registry";
+import { renderFeedbackFromTemplateMatches } from "./template-renderer";
 import type {
   GenerateResponse,
   NormalizedState,
@@ -18,7 +19,9 @@ export function buildPreparedPayload(input: {
   current: NormalizedState;
 }): PreparedPayload {
   const computed = computeReviewMetrics(input.original, input.current, input.reviewActionId);
-  const prompts = buildPrompts(computed.promptPacket);
+  const registry = getTemplateRegistry();
+  const prompts = buildPrompts(computed.promptPacket, registry.promptCatalog);
+
   return {
     preparedAt: new Date().toISOString(),
     stats: computed.stats,
@@ -61,6 +64,33 @@ async function safeLogAnalytics(input: {
   }
 }
 
+function buildLlmResult(input: {
+  prepared: PreparedPayload;
+  rawContent: string;
+  model: string;
+  latencyMs: number;
+  receivedAt: string;
+  matchedTemplateIds: string[];
+  repaired?: boolean;
+}): GenerateResponse {
+  const registry = getTemplateRegistry();
+  const rendered = renderFeedbackFromTemplateMatches(input.matchedTemplateIds, registry);
+
+  return {
+    prepared: input.prepared,
+    llm: {
+      feedback: rendered.feedback,
+      rawContent: input.rawContent,
+      model: input.model,
+      latencyMs: input.latencyMs,
+      receivedAt: input.receivedAt,
+      matchedTemplateIds: rendered.matchedTemplateIds,
+      templateRegistryVersion: registry.registryVersion,
+      ...(input.repaired ? { repaired: true } : {})
+    }
+  };
+}
+
 export async function generateFeedback(input: {
   reviewActionId: string;
   original: NormalizedState;
@@ -82,25 +112,17 @@ export async function generateFeedback(input: {
   }
 
   const prepared = buildPreparedPayload(input);
+  const registry = getTemplateRegistry();
 
   if (config.openRouterTestMode) {
-    const mockScores = [1, 2, 3] as const;
-    const mockFeedback = CATEGORIES.map((category, index) => ({
-      category,
-      score: mockScores[index % mockScores.length],
-      note: "test test test"
-    }));
-
-    const result: GenerateResponse = {
+    const result = buildLlmResult({
       prepared,
-      llm: {
-        feedback: mockFeedback,
-        rawContent: JSON.stringify({ feedback: mockFeedback }),
-        model: "test-mode",
-        latencyMs: 0,
-        receivedAt: new Date().toISOString()
-      }
-    };
+      rawContent: JSON.stringify({ findings: [] }),
+      model: "test-mode",
+      latencyMs: 0,
+      receivedAt: new Date().toISOString(),
+      matchedTemplateIds: []
+    });
 
     await safeLogAnalytics({
       eventType: "review_generate",
@@ -109,22 +131,32 @@ export async function generateFeedback(input: {
       current: input.current,
       prepared: result.prepared,
       aiReview: result.llm,
-      metadata: { source: "generateFeedback", testMode: true }
+      metadata: {
+        source: "generateFeedback",
+        testMode: true,
+        templateRegistryVersion: registry.registryVersion
+      }
     });
 
     return result;
   }
 
-  const llm = await sendToOpenRouter({
+  const llmSelection = await sendToOpenRouter({
     apiKey: config.openRouterApiKey,
     model: config.openRouterModel,
-    prompts: prepared.prompts
+    prompts: prepared.prompts,
+    registry
   });
 
-  const result: GenerateResponse = {
+  const result = buildLlmResult({
     prepared,
-    llm
-  };
+    rawContent: llmSelection.rawContent,
+    model: llmSelection.model,
+    latencyMs: llmSelection.latencyMs,
+    receivedAt: llmSelection.receivedAt,
+    matchedTemplateIds: llmSelection.findings,
+    repaired: llmSelection.repaired
+  });
 
   await safeLogAnalytics({
     eventType: "review_generate",
@@ -133,7 +165,11 @@ export async function generateFeedback(input: {
     current: input.current,
     prepared: result.prepared,
     aiReview: result.llm,
-    metadata: { source: "generateFeedback", testMode: false }
+    metadata: {
+      source: "generateFeedback",
+      testMode: false,
+      templateRegistryVersion: registry.registryVersion
+    }
   });
 
   return result;

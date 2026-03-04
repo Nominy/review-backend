@@ -1,66 +1,57 @@
 import { CATEGORIES } from "./rules";
-import type { PromptPacket } from "./types";
+import type { PromptPacket, TemplatePromptCatalog } from "./types";
 
-export function buildPrompts(promptPacket: PromptPacket): {
+export function buildPrompts(
+  promptPacket: PromptPacket,
+  templateCatalog: TemplatePromptCatalog
+): {
   systemPrompt: string;
   userPrompt: string;
   preview: string;
 } {
   const schema = {
-    feedback: CATEGORIES.map((category) => ({
-      category,
-      score: 1,
-      note: "..."
-    }))
+    findings: ["word_accuracy.example_issue"]
   };
 
-  const promptInput = {
-    editFootprint: promptPacket.editFootprint,
-    ownershipSummary: promptPacket.ownershipSummary,
-    scoreCaps: promptPacket.scoreCaps,
-    categoryEvidence: promptPacket.categoryEvidence
-  };
+  const promptCatalog = CATEGORIES.map((category) => ({
+    category,
+    templates: templateCatalog[category]
+  }));
 
   const systemPrompt = [
-    "You are an L2 QA reviewer for Babel Audio.",
-    "ORIGINAL is the L1 transcript before QA. CURRENT is the L2 transcript after QA.",
-    "Your job is to explain what L1 should improve, based only on the observed QA corrections.",
+    "You are a QA issue classifier for Babel Audio.",
+    "Select template IDs for issues that are clearly supported by the provided diffs.",
     "",
-    "Critical attribution rules:",
-    "1. Every concrete correction belongs to exactly one primary category.",
-    "2. Do not double count side effects in multiple categories.",
-    "3. Segmentation owns split/combine/add/delete events.",
-    "4. Timestamp Accuracy applies only to stable 1:1 segment boundary adjustments.",
-    "5. Number rendering with service tags like {SKAZ: ...} or {ISKAZ: ...} belongs to Tags & Emphasis, not Word Accuracy.",
-    "6. If punctuation moved because a word was added or removed, that still belongs to Word Accuracy, not Punctuation & Formatting.",
+    "How to use the payload:",
+    "- textDiffs are the primary source for Word Accuracy, Punctuation & Formatting, and Tags & Emphasis.",
+    "- timingDiffs are focused timestamp changes for stable segments.",
+    "- segmentationDiffs show unmatched segments and segment count changes.",
+    "- Do not expect severity labels, scores, or pre-labeled text categories.",
     "",
-    "Scoring rules:",
-    "- Use score caps from the user payload as hard upper bounds.",
-    "- 1 = isolated or no material issue.",
-    "- 2 = repeated issue.",
-    "- 3 = clearly systemic issue.",
-    "- If a category has no material evidence, keep score at 1.",
+    "Selection rules:",
+    "1. Return only template IDs from the provided catalog.",
+    "2. Do not invent IDs.",
+    "3. Do not return duplicate IDs.",
+    "4. findings may be an empty array.",
+    "5. If the text diffs show a language-level issue, choose the matching text template yourself.",
+    "6. Prefer the most specific template that fully explains the evidence.",
+    "7. Do not return a broad generic template when a more specific template already explains the same local diff.",
+    "8. Generic punctuation templates are fallback-only: do not combine them with dedicated tag or service-markup templates unless there is separate independent punctuation evidence elsewhere.",
     "",
     "Output rules:",
     "- Return strict JSON only. No markdown. No prose outside JSON.",
     "- Use exactly this schema:",
-    JSON.stringify(schema),
-    `- feedback must contain exactly ${CATEGORIES.length} items with these exact categories: ${JSON.stringify(CATEGORIES)}`,
-    "- note must be in Russian.",
-    "- note must be concise, practical, and must mention only the primary owned issue for that category.",
-    "- For score 1, keep the note calm and brief. For score 2 or 3, be direct and corrective, without generic praise."
+    JSON.stringify(schema)
   ].join("\n");
 
   const userPrompt = [
-    "Review the category evidence below and generate feedback.",
+    "Review the focused diff packet and choose all matching issue templates.",
     "",
-    "Internal checklist before scoring:",
-    "- Is there actual owned evidence for this category?",
-    "- Is it isolated, repeated, or systemic?",
-    "- Could this be a side effect owned by another category? If yes, do not count it here.",
+    "Focused diff packet:",
+    JSON.stringify(promptPacket, null, 2),
     "",
-    "Prompt packet:",
-    JSON.stringify(promptInput, null, 2)
+    "Template catalog:",
+    JSON.stringify(promptCatalog, null, 2)
   ].join("\n");
 
   return {

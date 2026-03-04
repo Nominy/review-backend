@@ -21,11 +21,17 @@ type ReviewAnalyticsLogEntry = {
     metricsVersion: string;
     promptVersion: string;
     promptInputChars: number;
+    templateRegistryVersion: string | null;
+    matchedTemplateIds: string[];
   };
   aiReview: unknown;
   inputBoxes: Record<string, unknown>;
   metadata: Record<string, unknown>;
 };
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
 
 function stateToText(state: NormalizedState): string {
   if (!Array.isArray(state.annotations) || state.annotations.length === 0) {
@@ -42,6 +48,37 @@ function stateToText(state: NormalizedState): string {
   return ordered.map((annotation) => annotation.content || "").join("\n").trim();
 }
 
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function extractTemplateMetadata(aiReview: unknown): {
+  templateRegistryVersion: string | null;
+  matchedTemplateIds: string[];
+} {
+  if (!isObject(aiReview)) {
+    return {
+      templateRegistryVersion: null,
+      matchedTemplateIds: []
+    };
+  }
+
+  return {
+    templateRegistryVersion:
+      typeof aiReview.templateRegistryVersion === "string"
+        ? aiReview.templateRegistryVersion
+        : null,
+    matchedTemplateIds: toStringArray(aiReview.matchedTemplateIds)
+  };
+}
+
 export async function logReviewAnalytics(input: {
   eventType: AnalyticsEventType;
   reviewActionId: string;
@@ -53,6 +90,8 @@ export async function logReviewAnalytics(input: {
   metadata?: Record<string, unknown>;
   logPath: string;
 }): Promise<void> {
+  const templateMetadata = extractTemplateMetadata(input.aiReview);
+
   const entry: ReviewAnalyticsLogEntry = {
     loggedAt: new Date().toISOString(),
     eventType: input.eventType,
@@ -69,7 +108,9 @@ export async function logReviewAnalytics(input: {
       promptPacket: input.prepared.promptPacket,
       metricsVersion: input.prepared.metricsVersion,
       promptVersion: input.prepared.promptVersion,
-      promptInputChars: input.prepared.prompts.systemPrompt.length + input.prepared.prompts.userPrompt.length
+      promptInputChars: input.prepared.prompts.systemPrompt.length + input.prepared.prompts.userPrompt.length,
+      templateRegistryVersion: templateMetadata.templateRegistryVersion,
+      matchedTemplateIds: templateMetadata.matchedTemplateIds
     },
     aiReview: input.aiReview ?? null,
     inputBoxes: input.inputBoxes ?? {},

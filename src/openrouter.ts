@@ -1,5 +1,5 @@
-import { CATEGORIES } from "./rules";
-import type { CategoryName } from "./types";
+import type { LoadedTemplateRegistry } from "./template-registry";
+import type { TemplateSelectionResponse } from "./types";
 
 type SendArgs = {
   apiKey: string;
@@ -8,6 +8,7 @@ type SendArgs = {
     systemPrompt: string;
     userPrompt: string;
   };
+  registry: LoadedTemplateRegistry;
 };
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -59,141 +60,45 @@ function parseModelJson(text: string): unknown {
   throw new Error("Model response is not valid JSON.");
 }
 
-function normalizeCategoryKey(value: unknown): string {
-  if (typeof value !== "string") return "";
-  return value
-    .toLowerCase()
-    .replace(/&/g, "and")
-    .replace(/[^a-z0-9]+/g, "")
-    .trim();
-}
-
-function categoryAliasMap(): Map<string, CategoryName> {
-  const map = new Map<string, CategoryName>();
-  const aliases: Record<CategoryName, string[]> = {
-    "Word Accuracy": ["word accuracy", "wordaccuracy", "accuracy of transcribed words", "wording accuracy"],
-    "Timestamp Accuracy": ["timestamp accuracy", "timing accuracy", "time accuracy", "timestamps accuracy"],
-    "Punctuation & Formatting": [
-      "punctuation & formatting",
-      "punctuation and formatting",
-      "punctuation formatting",
-      "formatting and punctuation"
-    ],
-    "Tags & Emphasis": ["tags & emphasis", "tags and emphasis", "tag emphasis", "emphasis and tags"],
-    Segmentation: ["segmentation", "segmenting", "segment breaks", "segment quality"]
-  };
-
-  for (const category of CATEGORIES) {
-    map.set(normalizeCategoryKey(category), category);
-    for (const alias of aliases[category]) {
-      map.set(normalizeCategoryKey(alias), category);
-    }
-  }
-  return map;
-}
-
-const aliasMap = categoryAliasMap();
-
-function parseScore(item: Record<string, unknown>): number {
-  const raw = item.score ?? item.grade ?? item.rating ?? item.value;
-  const score = Number.parseInt(String(raw), 10);
-  if (Number.isFinite(score)) return score;
-  return Number.NaN;
-}
-
-function parseNote(item: Record<string, unknown>): string {
-  const note =
-    item.note ??
-    item.advice ??
-    item.comment ??
-    item.text ??
-    item.feedback ??
-    item.description ??
-    "";
-  return typeof note === "string" ? note.trim() : "";
-}
-
-function extractItems(payload: unknown): Array<Record<string, unknown>> {
-  const items: Array<Record<string, unknown>> = [];
-
-  const pushFromArray = (arr: unknown[]) => {
-    for (const raw of arr) {
-      if (!raw || typeof raw !== "object") continue;
-      const obj = raw as Record<string, unknown>;
-      if (typeof obj.category === "string") {
-        items.push(obj);
-        continue;
-      }
-      const keys = Object.keys(obj);
-      if (keys.length === 1 && obj[keys[0]] && typeof obj[keys[0]] === "object") {
-        const nested = obj[keys[0]] as Record<string, unknown>;
-        items.push({ category: keys[0], ...nested });
-      }
-    }
-  };
-
-  if (!payload || typeof payload !== "object") return items;
-  const root = payload as Record<string, unknown>;
-
-  if (Array.isArray(root.feedback)) {
-    pushFromArray(root.feedback);
-  } else if (root.feedback && typeof root.feedback === "object") {
-    for (const [k, v] of Object.entries(root.feedback as Record<string, unknown>)) {
-      if (v && typeof v === "object") {
-        items.push({ category: k, ...(v as Record<string, unknown>) });
-      }
-    }
-  }
-
-  if (Array.isArray(root.categories)) pushFromArray(root.categories);
-  if (Array.isArray(root.results)) pushFromArray(root.results);
-  if (!items.length && Array.isArray(payload)) pushFromArray(payload);
-  return items;
-}
-
-function validateFeedback(payload: unknown): { feedback: Array<{ category: CategoryName; score: number; note: string }> } {
-  if (!payload || typeof payload !== "object") {
+function validateFindings(
+  payload: unknown,
+  registry: LoadedTemplateRegistry
+): TemplateSelectionResponse {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new Error("Model output must be an object.");
   }
 
-  const items = extractItems(payload);
-  if (!items.length) {
-    throw new Error("Missing feedback categories in model output.");
+  const rawFindings = (payload as Record<string, unknown>).findings;
+  if (!Array.isArray(rawFindings)) {
+    throw new Error("Model output must contain a findings array.");
   }
 
-  const byCategory = new Map<CategoryName, Record<string, unknown>>();
-  for (const item of items) {
-    const canonical = aliasMap.get(normalizeCategoryKey(item.category));
-    if (!canonical || byCategory.has(canonical)) continue;
-    byCategory.set(canonical, item);
-  }
+  const seen = new Set<string>();
+  const findings: string[] = [];
 
-  const normalized: Array<{ category: CategoryName; score: number; note: string }> = [];
-  for (const category of CATEGORIES) {
-    const item = byCategory.get(category);
-    if (!item) throw new Error(`Missing category: ${category}`);
-
-    const score = parseScore(item);
-    if (!Number.isFinite(score) || score < 1 || score > 3) {
-      throw new Error(`Invalid score for ${category}`);
+  for (const item of rawFindings) {
+    if (typeof item !== "string") {
+      throw new Error("Each finding must be a string template id.");
     }
 
-    const note = parseNote(item);
-    if (!note) throw new Error(`Empty note for ${category}`);
+    const templateId = item.trim();
+    if (!templateId || seen.has(templateId)) {
+      continue;
+    }
+    if (!registry.templatesById.has(templateId)) {
+      throw new Error(`Unknown template id: ${templateId}`);
+    }
 
-    normalized.push({
-      category,
-      score,
-      note: note.slice(0, 500)
-    });
+    seen.add(templateId);
+    findings.push(templateId);
   }
 
-  return { feedback: normalized };
+  return { findings };
 }
 
-function parseAndValidate(content: string) {
+function parseAndValidate(content: string, registry: LoadedTemplateRegistry) {
   const parsed = parseModelJson(content);
-  const validated = validateFeedback(parsed);
+  const validated = validateFindings(parsed, registry);
   return { parsed, validated };
 }
 
@@ -229,15 +134,15 @@ async function requestOnce(args: SendArgs, messages: Array<{ role: string; conte
     throw new Error("OpenRouter returned non-JSON payload.");
   }
 
-  const content = normalizeContent(
-    ((json.choices as Array<Record<string, unknown>> | undefined)?.[0]?.message as Record<string, unknown> | undefined)
-      ?.content
+  return normalizeContent(
+    ((json.choices as Array<Record<string, unknown>> | undefined)?.[0]?.message as
+      | Record<string, unknown>
+      | undefined)?.content
   );
-  return content;
 }
 
 export async function sendToOpenRouter(args: SendArgs): Promise<{
-  feedback: Array<{ category: CategoryName; score: number; note: string }>;
+  findings: string[];
   rawContent: string;
   model: string;
   latencyMs: number;
@@ -250,25 +155,23 @@ export async function sendToOpenRouter(args: SendArgs): Promise<{
     { role: "user", content: args.prompts.userPrompt }
   ];
 
+  const firstContent = await requestOnce(args, baseMessages);
+
   try {
-    const content = await requestOnce(args, baseMessages);
-    const { validated } = parseAndValidate(content);
+    const { validated } = parseAndValidate(firstContent, args.registry);
     return {
-      feedback: validated.feedback,
-      rawContent: content,
+      findings: validated.findings,
+      rawContent: firstContent,
       model: args.model,
       latencyMs: Date.now() - startedAt,
       receivedAt: new Date().toISOString()
     };
   } catch {
-    const firstContent = await requestOnce(args, baseMessages);
     const repairInstruction = [
-      "Исправь свой предыдущий ответ и верни СТРОГО JSON (без Markdown/текста).",
-      "Схема: { feedback: [ {category, score, note}, ... ] }.",
-      `feedback должен содержать РОВНО 5 элементов и РОВНО эти категории (точные названия): ${JSON.stringify(CATEGORIES)}`,
-      "score: целое 1..3 (1 лучше, 3 хуже).",
-      "note: по-русски, <= 500 символов, 1-2 предложения, конкретное действие + доброжелательная фраза.",
-      "Нельзя пропускать категории и нельзя добавлять лишние категории."
+      "Return strict JSON only.",
+      "Use exactly this schema: {\"findings\": [\"template.id\"]}.",
+      "findings must be an array of valid template IDs from the provided catalog.",
+      "Do not include any explanation or markdown."
     ].join("\n");
 
     const repairedContent = await requestOnce(args, [
@@ -276,10 +179,10 @@ export async function sendToOpenRouter(args: SendArgs): Promise<{
       { role: "assistant", content: firstContent },
       { role: "user", content: repairInstruction }
     ]);
-    const { validated } = parseAndValidate(repairedContent);
+    const { validated } = parseAndValidate(repairedContent, args.registry);
 
     return {
-      feedback: validated.feedback,
+      findings: validated.findings,
       rawContent: repairedContent,
       model: args.model,
       latencyMs: Date.now() - startedAt,
@@ -288,4 +191,3 @@ export async function sendToOpenRouter(args: SendArgs): Promise<{
     };
   }
 }
-

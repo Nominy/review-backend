@@ -2,6 +2,18 @@
 
 Server-side review engine for the extension.
 
+## Template Registry
+
+Issue templates are stored under `templates/` as five JSON files, one per review category:
+
+- `templates/word-accuracy.json`
+- `templates/timestamp-accuracy.json`
+- `templates/punctuation-formatting.json`
+- `templates/tags-emphasis.json`
+- `templates/segmentation.json`
+
+The backend now asks the LLM to return only matching template IDs from this catalog. Final reviewer notes are assembled locally from the matching template strings, while `POST /api/review/generate` keeps the same five-card response shape for extension compatibility.
+
 ## Run
 
 ```bash
@@ -16,7 +28,7 @@ Notes:
 - This project loads `.env.runtime` from app code (`src/load-env.ts`) and runs Bun with `--no-env-file` as a workaround for a Bun dotenv crash on some environments.
 - `OPENROUTER_API_KEY` is required when `OPENROUTER_TEST_MODE=false`.
 - `OPENROUTER_MODEL` is optional (defaults to `openai/gpt-oss-120b`).
-- `OPENROUTER_TEST_MODE` is optional (`false` by default). Set `true` to skip OpenRouter and return mock feedback (`test test test`, scores `1/2/3`).
+- `OPENROUTER_TEST_MODE` is optional (`false` by default). Set `true` to skip OpenRouter and return deterministic default template-backed feedback.
 - `REVIEW_PAIR_LOG_PATH` is optional (defaults to `logs/review-text-pairs.jsonl`).
 - `ANALYTICS_LOG_PATH` is optional (defaults to `logs/review-analytics.jsonl`).
 - `HOST` is optional (defaults to `127.0.0.1`).
@@ -79,13 +91,11 @@ After this, extension can call `https://reviewgen.ovh/api/review/generate`.
 
 Returns prepared payload with `stats`, `featurePacket`, and `prompts`.
 
-`featurePacket.diagnostics` now includes reviewer-oriented signals:
-- `word_accuracy` (change magnitude/severity)
-- `timestamp_behavior` (grew vs shrank segments, severity, advice hint)
-- `punctuation_formatting` (punctuation + spacing issue counters)
-- `tags_and_emphasis` (`<>`, `[]`, `{}`, `**`, breathing-tag deltas)
-- `segmentation` (added/deleted/split/combined event estimates, direction)
-- `reviewer_playbook_hints` (0.75 playback / zoom-hotkey hints, pause rule hint)
+The prepared payload is now intentionally lean:
+- `featurePacket.overview` gives high-level counts
+- `featurePacket.samples.textDiffs` provides focused before/after text pairs for NLP-heavy review
+- `featurePacket.samples.timingDiffs` provides focused boundary shifts for timestamp review
+- `featurePacket.samples.unmatchedOriginal` / `unmatchedCurrent` provide segmentation clues
 
 ## `POST /api/review/generate` body
 
