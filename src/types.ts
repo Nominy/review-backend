@@ -7,6 +7,7 @@ export type CategoryName =
 
 export type FeedbackItem = {
   category: CategoryName;
+  score: number;
   note: string;
 };
 

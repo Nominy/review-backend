@@ -66,6 +66,7 @@ export function renderFeedbackFromTemplateMatches(
 
     feedback.push({
       category,
+      score: 1,
       note
     });
   }
