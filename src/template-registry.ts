@@ -18,7 +18,22 @@ export type LoadedTemplateRegistry = {
   registryVersion: string;
 };
 
+export type TemplateRegistryDiskSnapshot = Array<
+  TemplateRegistryFile & {
+    fileName: string;
+    filePath: string;
+  }
+>;
+
 const TEMPLATE_DIR = fileURLToPath(new URL("../templates/", import.meta.url));
+
+const CATEGORY_FILE_NAMES: Record<CategoryName, string> = {
+  "Word Accuracy": "word-accuracy.json",
+  "Timestamp Accuracy": "timestamp-accuracy.json",
+  "Punctuation & Formatting": "punctuation-formatting.json",
+  "Tags & Emphasis": "tags-emphasis.json",
+  Segmentation: "segmentation.json"
+};
 
 let cachedRegistry: LoadedTemplateRegistry | null = null;
 
@@ -62,18 +77,19 @@ function assertPriority(value: unknown, context: string): number {
   return parsed;
 }
 
-function parseRegistryFile(fileName: string, raw: string): TemplateRegistryFile {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
+export function validateTemplateId(id: string, context: string): string {
+  if (!/^[a-z0-9._-]+$/.test(id)) {
     throw new Error(
-      `Could not parse template file ${fileName}: ${
-        error instanceof Error ? error.message : String(error)
-      }`
+      `${context} must use only lowercase ASCII letters, digits, dots, underscores, and dashes.`
     );
   }
+  return id;
+}
 
+export function validateTemplateRegistryFileData(
+  fileName: string,
+  parsed: unknown
+): TemplateRegistryFile {
   if (!isObject(parsed)) {
     throw new Error(`Template file ${fileName} must contain an object.`);
   }
@@ -95,7 +111,11 @@ function parseRegistryFile(fileName: string, raw: string): TemplateRegistryFile 
     }
 
     return {
-      id: assertString(template.id, `${fileName}.templates[${index}].id`),
+      id: validateTemplateId(
+        assertString(template.id, `${fileName}.templates[${index}].id`),
+        `${fileName}.templates[${index}].id`
+      ),
+      title: assertString(template.title, `${fileName}.templates[${index}].title`),
       description: assertString(
         template.description,
         `${fileName}.templates[${index}].description`
@@ -114,11 +134,19 @@ function parseRegistryFile(fileName: string, raw: string): TemplateRegistryFile 
   };
 }
 
-function validateTemplateId(id: string, context: string): string {
-  if (!/^[a-z0-9._-]+$/.test(id)) {
-    throw new Error(`${context} must use only lowercase ASCII letters, digits, dots, underscores, and dashes.`);
+function parseRegistryFile(fileName: string, raw: string): TemplateRegistryFile {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(
+      `Could not parse template file ${fileName}: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
   }
-  return id;
+
+  return validateTemplateRegistryFileData(fileName, parsed);
 }
 
 function toPromptEntry(template: ReviewTemplate): TemplatePromptEntry {
@@ -135,12 +163,33 @@ function sortTemplates(left: ReviewTemplate, right: ReviewTemplate): number {
   return left.id.localeCompare(right.id);
 }
 
-function loadTemplateRegistry(): LoadedTemplateRegistry {
+export function getTemplateFilePath(category: CategoryName): string {
+  return join(TEMPLATE_DIR, CATEGORY_FILE_NAMES[category]);
+}
+
+export function readTemplateRegistryFiles(): TemplateRegistryDiskSnapshot {
   const templateFiles = readdirSync(TEMPLATE_DIR, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
     .map((entry) => entry.name)
     .sort((a, b) => a.localeCompare(b));
 
+  const files: TemplateRegistryDiskSnapshot = [];
+
+  for (const fileName of templateFiles) {
+    const raw = readFileSync(join(TEMPLATE_DIR, fileName), "utf8");
+    const parsed = parseRegistryFile(fileName, raw);
+    files.push({
+      ...parsed,
+      fileName,
+      filePath: join(TEMPLATE_DIR, fileName)
+    });
+  }
+
+  return files;
+}
+
+function loadTemplateRegistry(): LoadedTemplateRegistry {
+  const templateFiles = readTemplateRegistryFiles();
   const templatesById = new Map<string, ReviewTemplate>();
   const templatesByCategory = createCategoryRecord<ReviewTemplate[]>(() => []);
   const defaultTextByCategory = createCategoryRecord<string>(() => "");
@@ -148,10 +197,7 @@ function loadTemplateRegistry(): LoadedTemplateRegistry {
   const seenCategories = new Set<CategoryName>();
   const versionParts: string[] = [];
 
-  for (const fileName of templateFiles) {
-    const raw = readFileSync(join(TEMPLATE_DIR, fileName), "utf8");
-    const parsed = parseRegistryFile(fileName, raw);
-
+  for (const parsed of templateFiles) {
     if (seenCategories.has(parsed.category)) {
       throw new Error(`Duplicate template file category: ${parsed.category}`);
     }
@@ -159,17 +205,13 @@ function loadTemplateRegistry(): LoadedTemplateRegistry {
     defaultTextByCategory[parsed.category] = parsed.defaultText;
     versionParts.push(`${parsed.category}:${parsed.version}`);
 
-    for (let index = 0; index < parsed.templates.length; index += 1) {
-      const template = parsed.templates[index];
-      const id = validateTemplateId(template.id, `${fileName}.templates[${index}].id`);
-
-      if (templatesById.has(id)) {
-        throw new Error(`Duplicate template id: ${id}`);
+    for (const template of parsed.templates) {
+      if (templatesById.has(template.id)) {
+        throw new Error(`Duplicate template id: ${template.id}`);
       }
 
       const fullTemplate: ReviewTemplate = {
         ...template,
-        id,
         category: parsed.category
       };
 
@@ -177,7 +219,7 @@ function loadTemplateRegistry(): LoadedTemplateRegistry {
         continue;
       }
 
-      templatesById.set(id, fullTemplate);
+      templatesById.set(template.id, fullTemplate);
       templatesByCategory[parsed.category].push(fullTemplate);
       promptCatalog[parsed.category].push(toPromptEntry(fullTemplate));
     }
@@ -208,6 +250,10 @@ function loadTemplateRegistry(): LoadedTemplateRegistry {
     promptCatalog,
     registryVersion: versionParts.sort((a, b) => a.localeCompare(b)).join("|")
   };
+}
+
+export function resetTemplateRegistryCache(): void {
+  cachedRegistry = null;
 }
 
 export function getTemplateRegistry(): LoadedTemplateRegistry {

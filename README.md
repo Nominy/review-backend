@@ -12,6 +12,15 @@ Issue templates are stored under `templates/` as five JSON files, one per review
 - `templates/tags-emphasis.json`
 - `templates/segmentation.json`
 
+Each template entry now contains:
+
+- `id`
+- `title`
+- `description`
+- `reportText`
+- `priority`
+- `enabled`
+
 The backend now asks the LLM to return only matching template IDs from this catalog. Final reviewer notes are assembled locally from the matching template strings, while `POST /api/review/generate` keeps the same five-card response shape for extension compatibility.
 
 ## Run
@@ -37,6 +46,9 @@ Notes:
 - `CORS_ALLOWED_ORIGINS` is optional:
   - set `*` to allow all origins (dev)
   - or comma-separated values (recommended), e.g. `https://dashboard.babel.audio`
+- `TEMPLATES_LAB_USERNAME` and `TEMPLATES_LAB_PASSWORD` are optional:
+  - when both are set, the admin UI is enabled at `/templates-lab`
+  - the whole section uses HTTP Basic Auth
 
 Each `POST /api/review/generate` call appends one JSON line with:
 - `reviewActionId`
@@ -70,6 +82,34 @@ Default URL: `http://127.0.0.1:3001`
 4. Proxy `https://reviewgen.ovh` -> `http://127.0.0.1:3001`.
 
 After this, extension can call `https://reviewgen.ovh/api/review/generate`.
+
+## Templates Lab
+
+The backend can also serve a lightweight admin UI for managing template JSON files directly:
+
+- `GET /templates-lab`
+- `GET /api/templates-lab/templates`
+- `POST /api/templates-lab/save`
+
+It is disabled unless both `TEMPLATES_LAB_USERNAME` and `TEMPLATES_LAB_PASSWORD` are configured.
+
+The UI now stages create/edit/delete/CSV-import changes locally. Nothing is written to `templates/*.json` until the user clicks `Save Draft`.
+
+CSV export from the UI downloads the current draft as a 4-column file:
+
+```csv
+category,name,error description,template text
+```
+
+CSV import inside the UI supports two optional toggles:
+- `Ignore first line`: skip the first CSV row entirely and treat the file as data-only
+- `Overwrite existing registry`: replace the current draft with only the templates from the CSV before saving
+
+By default, CSV import expects a header row with exactly:
+
+```csv
+category,name,error description,template text
+```
 
 ## Endpoints
 

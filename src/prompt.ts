@@ -19,7 +19,7 @@ export function buildPrompts(
   }));
 
   const systemPrompt = [
-    "You are a QA issue classifier for Babel Audio.",
+    "You are a transcript issue classifier for Babel Audio.",
     "Select template IDs for issues that are clearly supported by the provided diffs.",
     "",
     "How to use the payload:",

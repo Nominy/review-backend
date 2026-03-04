@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
 import {
@@ -6,6 +7,13 @@ import {
   submitTranscriptReviewActionAnalytics
 } from "./service";
 import { config } from "./config";
+import {
+  createTemplateForLab,
+  importTemplatesFromCsv,
+  listTemplatesLabData,
+  saveTemplatesLabDraft,
+  updateTemplateForLab
+} from "./template-admin";
 import type { NormalizedState } from "./types";
 
 type PrepareBody = {
@@ -20,6 +28,24 @@ type SubmitTranscriptReviewActionBody = PrepareBody & {
   metadata?: Record<string, unknown>;
 };
 
+type TemplatesLabCreateBody = {
+  category: string;
+  name: string;
+  errorDescription: string;
+  templateText: string;
+};
+
+type TemplatesLabUpdateBody = {
+  name: string;
+  errorDescription: string;
+  templateText: string;
+  enabled: boolean;
+};
+
+type TemplatesLabSaveBody = {
+  categories: unknown[];
+};
+
 type CreditsSnapshot = {
   total: number | null;
   used: number | null;
@@ -32,6 +58,12 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
+const TEMPLATES_LAB_INDEX_PATH = fileURLToPath(new URL("./templates-lab/index.html", import.meta.url));
+const TEMPLATES_LAB_STYLES_PATH = fileURLToPath(
+  new URL("./templates-lab/styles.css", import.meta.url)
+);
+const TEMPLATES_LAB_APP_PATH = fileURLToPath(new URL("./templates-lab/app.js", import.meta.url));
+
 function toFiniteNumber(value: unknown): number | null {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -39,6 +71,20 @@ function toFiniteNumber(value: unknown): number | null {
 
 function fmtCredits(value: number | null): string {
   return value === null ? "?" : value.toFixed(4);
+}
+
+function getErrorStatus(error: unknown, fallback = 500): number {
+  if (error && typeof error === "object" && "statusCode" in error) {
+    const parsed = Number((error as { statusCode?: unknown }).statusCode);
+    if (Number.isInteger(parsed) && parsed >= 100) {
+      return parsed;
+    }
+  }
+  return fallback;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function funnyCreditsLine(remaining: number | null): string {
@@ -138,11 +184,93 @@ function assertSubmitTranscriptReviewActionBody(
   }
 }
 
+function assertTemplatesLabCreateBody(body: unknown): asserts body is TemplatesLabCreateBody {
+  if (!isObject(body)) {
+    throw new Error("Body must be an object.");
+  }
+  if (typeof body.category !== "string" || !body.category.trim()) {
+    throw new Error("category is required.");
+  }
+  if (typeof body.name !== "string" || !body.name.trim()) {
+    throw new Error("name is required.");
+  }
+  if (typeof body.errorDescription !== "string" || !body.errorDescription.trim()) {
+    throw new Error("errorDescription is required.");
+  }
+  if (typeof body.templateText !== "string" || !body.templateText.trim()) {
+    throw new Error("templateText is required.");
+  }
+}
+
+function assertTemplatesLabUpdateBody(body: unknown): asserts body is TemplatesLabUpdateBody {
+  if (!isObject(body)) {
+    throw new Error("Body must be an object.");
+  }
+  if (typeof body.name !== "string" || !body.name.trim()) {
+    throw new Error("name is required.");
+  }
+  if (typeof body.errorDescription !== "string" || !body.errorDescription.trim()) {
+    throw new Error("errorDescription is required.");
+  }
+  if (typeof body.templateText !== "string" || !body.templateText.trim()) {
+    throw new Error("templateText is required.");
+  }
+  if (typeof body.enabled !== "boolean") {
+    throw new Error("enabled is required.");
+  }
+}
+
+function assertTemplatesLabSaveBody(body: unknown): asserts body is TemplatesLabSaveBody {
+  if (!isObject(body)) {
+    throw new Error("Body must be an object.");
+  }
+  if (!Array.isArray(body.categories)) {
+    throw new Error("categories is required.");
+  }
+}
+
+function requireTemplatesLabAccess(
+  authorization: string | undefined,
+  set: { status?: number; headers?: Record<string, string> }
+): { error: string } | null {
+  if (!config.templatesLabEnabled) {
+    set.status = 404;
+    return { error: "Templates Lab is disabled." };
+  }
+
+  const header = String(authorization || "").trim();
+  if (!header.startsWith("Basic ")) {
+    set.status = 401;
+    set.headers = { ...(set.headers || {}), "WWW-Authenticate": 'Basic realm="Templates Lab"' };
+    return { error: "Unauthorized" };
+  }
+
+  try {
+    const decoded = Buffer.from(header.slice("Basic ".length), "base64").toString("utf8");
+    const separator = decoded.indexOf(":");
+    const username = separator >= 0 ? decoded.slice(0, separator) : decoded;
+    const password = separator >= 0 ? decoded.slice(separator + 1) : "";
+
+    if (
+      username === config.templatesLabUsername &&
+      password === config.templatesLabPassword
+    ) {
+      return null;
+    }
+  } catch {
+    // fall through to unauthorized
+  }
+
+  set.status = 401;
+  set.headers = { ...(set.headers || {}), "WWW-Authenticate": 'Basic realm="Templates Lab"' };
+  return { error: "Unauthorized" };
+}
+
 const app = new Elysia()
   .use(
     cors({
       origin: config.corsOrigin,
-      methods: ["GET", "POST", "OPTIONS"],
+      methods: ["GET", "POST", "PUT", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization"]
     })
   )
@@ -161,6 +289,27 @@ const app = new Elysia()
       now: new Date().toISOString(),
       openRouterCredits: credits
     };
+  })
+  .get("/templates-lab", ({ headers, set }) => {
+    const blocked = requireTemplatesLabAccess(headers.authorization, set);
+    if (blocked) {
+      return blocked;
+    }
+    return Bun.file(TEMPLATES_LAB_INDEX_PATH);
+  })
+  .get("/templates-lab/styles.css", ({ headers, set }) => {
+    const blocked = requireTemplatesLabAccess(headers.authorization, set);
+    if (blocked) {
+      return blocked;
+    }
+    return Bun.file(TEMPLATES_LAB_STYLES_PATH);
+  })
+  .get("/templates-lab/app.js", ({ headers, set }) => {
+    const blocked = requireTemplatesLabAccess(headers.authorization, set);
+    if (blocked) {
+      return blocked;
+    }
+    return Bun.file(TEMPLATES_LAB_APP_PATH);
   })
   .post("/api/review/prepare", ({ body, set }) => {
     try {
@@ -188,6 +337,115 @@ const app = new Elysia()
       const msg = error instanceof Error ? error.message : String(error);
       set.status = msg.includes("required") || msg.includes("Body") ? 400 : 500;
       return { error: msg };
+    }
+  })
+  .get("/api/templates-lab/templates", ({ headers, set }) => {
+    const blocked = requireTemplatesLabAccess(headers.authorization, set);
+    if (blocked) {
+      return blocked;
+    }
+
+    try {
+      return listTemplatesLabData();
+    } catch (error) {
+      set.status = getErrorStatus(error);
+      return { error: getErrorMessage(error) };
+    }
+  })
+  .post("/api/templates-lab/save", async ({ body, headers, set }) => {
+    const blocked = requireTemplatesLabAccess(headers.authorization, set);
+    if (blocked) {
+      return blocked;
+    }
+
+    try {
+      assertTemplatesLabSaveBody(body);
+      return await saveTemplatesLabDraft({
+        categories: body.categories
+      });
+    } catch (error) {
+      set.status = getErrorStatus(
+        error,
+        getErrorMessage(error).includes("required") || getErrorMessage(error).includes("Body")
+          ? 400
+          : 500
+      );
+      return { error: getErrorMessage(error) };
+    }
+  })
+  .post("/api/templates-lab/templates", async ({ body, headers, set }) => {
+    const blocked = requireTemplatesLabAccess(headers.authorization, set);
+    if (blocked) {
+      return blocked;
+    }
+
+    try {
+      assertTemplatesLabCreateBody(body);
+      set.status = 201;
+      return await createTemplateForLab({
+        category: body.category,
+        name: body.name,
+        errorDescription: body.errorDescription,
+        templateText: body.templateText
+      });
+    } catch (error) {
+      set.status = getErrorStatus(
+        error,
+        getErrorMessage(error).includes("required") || getErrorMessage(error).includes("Body")
+          ? 400
+          : 500
+      );
+      return { error: getErrorMessage(error) };
+    }
+  })
+  .put("/api/templates-lab/templates/:id", async ({ params, body, headers, set }) => {
+    const blocked = requireTemplatesLabAccess(headers.authorization, set);
+    if (blocked) {
+      return blocked;
+    }
+
+    try {
+      assertTemplatesLabUpdateBody(body);
+      return await updateTemplateForLab({
+        id: params.id,
+        name: body.name,
+        errorDescription: body.errorDescription,
+        templateText: body.templateText,
+        enabled: body.enabled
+      });
+    } catch (error) {
+      set.status = getErrorStatus(
+        error,
+        getErrorMessage(error).includes("required") || getErrorMessage(error).includes("Body")
+          ? 400
+          : 500
+      );
+      return { error: getErrorMessage(error) };
+    }
+  })
+  .post("/api/templates-lab/import-csv", async ({ headers, request, set }) => {
+    const blocked = requireTemplatesLabAccess(headers.authorization, set);
+    if (blocked) {
+      return blocked;
+    }
+
+    try {
+      const formData = await request.formData();
+      const fileField = formData.get("file");
+      let csvText = "";
+
+      if (typeof fileField === "string") {
+        csvText = fileField;
+      } else if (fileField && typeof (fileField as Blob).text === "function") {
+        csvText = await (fileField as Blob).text();
+      } else {
+        throw new Error("CSV file is required.");
+      }
+
+      return await importTemplatesFromCsv(csvText);
+    } catch (error) {
+      set.status = getErrorStatus(error, 500);
+      return { error: getErrorMessage(error) };
     }
   })
   .post("/api/trpc/transcriptions.submitTranscriptReviewAction", async ({ body, set }) => {

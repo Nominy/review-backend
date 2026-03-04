@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Babel Templates Lab</title>
+  <link rel="stylesheet" href="/templates-lab/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Internal Admin</p>
+        <h1>Templates Lab</h1>
+        <p class="sub">Manage error templates as a local draft. Create, edit, delete, and import changes here, then save once to persist them to the backend JSON registry.</p>
+      </div>
+      <div class="hero-meta">
+        <div class="meta-card">
+          <span class="meta-label">Registry Version</span>
+          <strong id="registryVersion">-</strong>
+        </div>
+        <button id="saveDraftBtn" type="button">Save Draft</button>
+        <button id="discardDraftBtn" type="button" class="secondary">Discard Draft</button>
+        <button id="refreshBtn" type="button" class="secondary">Refresh</button>
+      </div>
+    </header>
+
+    <section class="status-panel">
+      <div class="status" id="status">Loading templates...</div>
+      <div class="import-row">
+        <input id="csvFile" type="file" accept=".csv,text/csv">
+        <label class="compact-toggle">
+          <input id="csvIgnoreHeader" type="checkbox">
+          <span>Ignore first line</span>
+        </label>
+        <label class="compact-toggle">
+          <input id="csvOverwriteRegistry" type="checkbox">
+          <span>Overwrite existing registry</span>
+        </label>
+        <button id="importBtn" type="button">Import CSV</button>
+        <button id="exportBtn" type="button" class="secondary">Export CSV</button>
+      </div>
+    </section>
+
+    <main class="layout">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Templates</h2>
+          <button id="newTemplateBtn" type="button" class="secondary">New Template</button>
+        </div>
+        <div class="filters">
+          <label>
+            <span>Category</span>
+            <select id="categoryFilter"></select>
+          </label>
+          <label>
+            <span>Search</span>
+            <input id="searchInput" type="search" placeholder="Search title, id, description">
+          </label>
+        </div>
+        <div class="list" id="templateList"></div>
+      </section>
+
+      <section class="panel editor-panel">
+        <div class="panel-head">
+          <h2 id="editorTitle">Create Template</h2>
+        </div>
+
+        <form id="createForm" class="stack">
+          <label>
+            <span>Category</span>
+            <select id="createCategory"></select>
+          </label>
+          <label>
+            <span>Name</span>
+            <input id="createName" type="text" placeholder="Human-readable template name">
+          </label>
+          <label>
+            <span>Generated ID</span>
+            <input id="createIdPreview" type="text" disabled>
+          </label>
+          <label>
+            <span>Error Description</span>
+            <textarea id="createDescription" rows="6" placeholder="Model-facing description"></textarea>
+          </label>
+          <label>
+            <span>Template Text</span>
+            <textarea id="createReportText" rows="6" placeholder="User-facing template text"></textarea>
+          </label>
+          <div class="form-actions">
+            <button id="createSubmitBtn" type="submit">Add To Draft</button>
+            <button id="createResetBtn" type="button" class="secondary">Reset</button>
+          </div>
+        </form>
+
+        <form id="editForm" class="stack hidden">
+          <div class="grid-3">
+            <label>
+              <span>ID</span>
+              <input id="editId" type="text" disabled>
+            </label>
+            <label>
+              <span>Category</span>
+              <input id="editCategory" type="text" disabled>
+            </label>
+            <label>
+              <span>Priority</span>
+              <input id="editPriority" type="text" disabled>
+            </label>
+          </div>
+          <label>
+            <span>Name</span>
+            <input id="editName" type="text">
+          </label>
+          <label>
+            <span>Error Description</span>
+            <textarea id="editDescription" rows="6"></textarea>
+          </label>
+          <label>
+            <span>Template Text</span>
+            <textarea id="editReportText" rows="6"></textarea>
+          </label>
+          <label class="toggle">
+            <input id="editEnabled" type="checkbox">
+            <span>Enabled</span>
+          </label>
+          <div class="form-actions">
+            <button id="editSubmitBtn" type="submit">Apply To Draft</button>
+            <button id="editDeleteBtn" type="button" class="danger">Delete Template</button>
+            <button id="editCancelBtn" type="button" class="secondary">Cancel</button>
+          </div>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <script src="/templates-lab/app.js"></script>
+</body>
+</html>

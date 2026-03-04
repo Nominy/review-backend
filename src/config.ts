@@ -47,5 +47,9 @@ export const config = {
   reviewPairLogPath: optionalEnv("REVIEW_PAIR_LOG_PATH", "logs/review-text-pairs.jsonl"),
   analyticsLogPath: optionalEnv("ANALYTICS_LOG_PATH", "logs/review-analytics.jsonl"),
   publicBaseUrl: optionalEnv("PUBLIC_BASE_URL", defaultPublicBaseUrl),
-  corsOrigin: parseCorsOriginEnv("CORS_ALLOWED_ORIGINS")
+  corsOrigin: parseCorsOriginEnv("CORS_ALLOWED_ORIGINS"),
+  templatesLabUsername: optionalEnv("TEMPLATES_LAB_USERNAME", ""),
+  templatesLabPassword: optionalEnv("TEMPLATES_LAB_PASSWORD", ""),
+  templatesLabEnabled:
+    !!optionalEnv("TEMPLATES_LAB_USERNAME", "") && !!optionalEnv("TEMPLATES_LAB_PASSWORD", "")
 };

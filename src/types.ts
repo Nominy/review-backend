@@ -100,6 +100,7 @@ export type TemplateCategory = CategoryName;
 
 export type TemplateDefinition = {
   id: string;
+  title: string;
   description: string;
   reportText: string;
   priority: number;
