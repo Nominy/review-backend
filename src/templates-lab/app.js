@@ -72,7 +72,8 @@
     createName: document.getElementById("createName"),
     createIdPreview: document.getElementById("createIdPreview"),
     createDescription: document.getElementById("createDescription"),
-    createReportText: document.getElementById("createReportText"),
+    createReportTexts: document.getElementById("createReportTexts"),
+    createAddVariantBtn: document.getElementById("createAddVariantBtn"),
     createResetBtn: document.getElementById("createResetBtn"),
     editForm: document.getElementById("editForm"),
     editId: document.getElementById("editId"),
@@ -80,7 +81,8 @@
     editPriority: document.getElementById("editPriority"),
     editName: document.getElementById("editName"),
     editDescription: document.getElementById("editDescription"),
-    editReportText: document.getElementById("editReportText"),
+    editReportTexts: document.getElementById("editReportTexts"),
+    editAddVariantBtn: document.getElementById("editAddVariantBtn"),
     editEnabled: document.getElementById("editEnabled"),
     editDeleteBtn: document.getElementById("editDeleteBtn"),
     editCancelBtn: document.getElementById("editCancelBtn")
@@ -131,6 +133,66 @@
     els.createIdPreview.value = prefix && slug ? prefix + "." + slug : "";
   }
 
+  function createVariantRow(index, value) {
+    const row = document.createElement("div");
+    row.className = "variant-item";
+
+    const head = document.createElement("div");
+    head.className = "variant-item-head";
+    const label = document.createElement("span");
+    label.textContent = "Variant " + (index + 1);
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "secondary variant-remove";
+    removeBtn.textContent = "Remove";
+
+    const textarea = document.createElement("textarea");
+    textarea.rows = 3;
+    textarea.className = "variant-text";
+    textarea.value = value || "";
+    textarea.placeholder = "User-facing template text";
+
+    head.appendChild(label);
+    head.appendChild(removeBtn);
+    row.appendChild(head);
+    row.appendChild(textarea);
+    return row;
+  }
+
+  function renderVariantList(container, values) {
+    container.className = "variant-list";
+    container.innerHTML = "";
+    const normalized = Array.isArray(values) && values.length ? values : [""];
+    normalized.forEach((value, index) => {
+      container.appendChild(createVariantRow(index, value));
+    });
+  }
+
+  function addVariantRow(container, value) {
+    const nextIndex = container.querySelectorAll(".variant-item").length;
+    container.appendChild(createVariantRow(nextIndex, value || ""));
+  }
+
+  function renumberVariantRows(container) {
+    const rows = container.querySelectorAll(".variant-item");
+    rows.forEach((row, index) => {
+      const label = row.querySelector(".variant-item-head span");
+      if (label) {
+        label.textContent = "Variant " + (index + 1);
+      }
+    });
+  }
+
+  function collectVariantTexts(container, fieldName) {
+    const values = Array.from(container.querySelectorAll("textarea"))
+      .map((textarea) => String(textarea.value || "").trim())
+      .filter(Boolean);
+    if (!values.length) {
+      throw new Error(fieldName + " must include at least one non-empty variant.");
+    }
+    return values;
+  }
+
   function cloneCategories(categories) {
     return (Array.isArray(categories) ? categories : []).map((group) => ({
       category: group.category,
@@ -141,7 +203,9 @@
             id: template.id,
             title: template.title,
             description: template.description,
-            reportText: template.reportText,
+            reportTexts: Array.isArray(template.reportTexts)
+              ? template.reportTexts.map((item) => String(item))
+              : [],
             priority: template.priority,
             enabled: !!template.enabled
           }))
@@ -177,7 +241,9 @@
         id: template.id,
         title: template.title,
         description: template.description,
-        reportText: template.reportText,
+        reportTexts: Array.isArray(template.reportTexts)
+          ? template.reportTexts.map((item) => String(item))
+          : [],
         priority: template.priority,
         enabled: template.enabled,
         category: group.category
@@ -237,7 +303,7 @@
     els.editPriority.value = String(template.priority);
     els.editName.value = template.title;
     els.editDescription.value = template.description;
-    els.editReportText.value = template.reportText;
+    renderVariantList(els.editReportTexts, template.reportTexts);
     els.editEnabled.checked = !!template.enabled;
     renderList();
   }
@@ -248,6 +314,7 @@
       els.createCategory.selectedIndex = 0;
     }
     buildIdPreview();
+    renderVariantList(els.createReportTexts, [""]);
   }
 
   function renderCategoryOptions() {
@@ -299,7 +366,7 @@
         template.title,
         template.id,
         template.description,
-        template.reportText,
+        (template.reportTexts || []).join(" "),
         template.category
       ]
         .join(" ")
@@ -380,7 +447,7 @@
           id: selected.template.id,
           title: selected.template.title,
           description: selected.template.description,
-          reportText: selected.template.reportText,
+          reportTexts: selected.template.reportTexts,
           priority: selected.template.priority,
           enabled: selected.template.enabled
         });
@@ -419,7 +486,7 @@
     const category = assertNonEmpty(els.createCategory.value, "Category");
     const name = assertNonEmpty(els.createName.value, "Name");
     const description = assertNonEmpty(els.createDescription.value, "Error description");
-    const reportText = assertNonEmpty(els.createReportText.value, "Template text");
+    const reportTexts = collectVariantTexts(els.createReportTexts, "Template text variants");
     const id = assertNonEmpty(els.createIdPreview.value, "Generated ID");
     const existing = getTemplateById(id);
 
@@ -436,7 +503,7 @@
       id: id,
       title: name,
       description: description,
-      reportText: reportText,
+      reportTexts: reportTexts,
       priority: getNextPriority(group),
       enabled: true
     };
@@ -449,7 +516,7 @@
       id: created.id,
       title: created.title,
       description: created.description,
-      reportText: created.reportText,
+      reportTexts: created.reportTexts,
       priority: created.priority,
       enabled: created.enabled
     });
@@ -467,7 +534,7 @@
 
     found.template.title = assertNonEmpty(els.editName.value, "Name");
     found.template.description = assertNonEmpty(els.editDescription.value, "Error description");
-    found.template.reportText = assertNonEmpty(els.editReportText.value, "Template text");
+    found.template.reportTexts = collectVariantTexts(els.editReportTexts, "Template text variants");
     found.template.enabled = !!els.editEnabled.checked;
 
     sortDraftTemplates();
@@ -477,7 +544,7 @@
       id: found.template.id,
       title: found.template.title,
       description: found.template.description,
-      reportText: found.template.reportText,
+      reportTexts: found.template.reportTexts,
       priority: found.template.priority,
       enabled: found.template.enabled
     });
@@ -578,15 +645,35 @@
   }
 
   function buildExportRows() {
-    const rows = [["category", "name", "error description", "template text"]];
+    const allTemplates = getAllTemplates();
+    const maxVariants = Math.max(
+      1,
+      ...allTemplates.map((template) =>
+        Array.isArray(template.reportTexts) && template.reportTexts.length
+          ? template.reportTexts.length
+          : 1
+      )
+    );
+    const rows = [
+      [
+        "category",
+        "name",
+        "error description",
+        ...Array.from({ length: maxVariants }, (_, index) => "template text " + (index + 1))
+      ]
+    ];
 
     for (const group of state.categories) {
       for (const template of group.templates) {
+        const variants = (Array.isArray(template.reportTexts) ? template.reportTexts : [])
+          .map((value) => String(value || "").trim())
+          .filter(Boolean);
         rows.push([
           group.category,
           template.title,
           template.description,
-          template.reportText
+          ...variants,
+          ...Array.from({ length: maxVariants - variants.length }, () => "")
         ]);
       }
     }
@@ -657,18 +744,33 @@
       throw new Error("CSV is empty.");
     }
 
-    const expectedHeaders = ["category", "name", "error description", "template text"];
+    const expectedHeaders = ["category", "name", "error description"];
     let startRowIndex = 0;
 
     if (ignoreHeader) {
       startRowIndex = 1;
     } else {
       const headers = rows[0].map(normalizeCsvHeader);
+      if (headers.length < expectedHeaders.length + 1) {
+        throw new Error(
+          "CSV header must include category,name,error description and at least one template text column."
+        );
+      }
       if (
-        headers.length !== expectedHeaders.length ||
-        headers.some((value, index) => value !== expectedHeaders[index])
+        headers.some(
+          (value, index) => index < expectedHeaders.length && value !== expectedHeaders[index]
+        )
       ) {
-        throw new Error("CSV header must be exactly: " + expectedHeaders.join(", "));
+        throw new Error("CSV header must start with: " + expectedHeaders.join(", "));
+      }
+      const variantHeaders = headers.slice(expectedHeaders.length);
+      const invalidVariantHeader = variantHeaders.find(
+        (value, index) => value !== "template text " + (index + 1)
+      );
+      if (invalidVariantHeader) {
+        throw new Error(
+          "Template text headers must be named in order: template text 1, template text 2, ..."
+        );
       }
       startRowIndex = 1;
     }
@@ -685,8 +787,8 @@
       if (!row.some((value) => String(value || "").trim())) {
         continue;
       }
-      if (row.length !== 4) {
-        throw new Error("CSV row " + (index + 1) + " must have exactly 4 columns.");
+      if (row.length < 4) {
+        throw new Error("CSV row " + (index + 1) + " must have at least 4 columns.");
       }
 
       const category = assertNonEmpty(row[0], "CSV row " + (index + 1) + " category");
@@ -695,7 +797,15 @@
         row[2],
         "CSV row " + (index + 1) + " error description"
       );
-      const reportText = assertNonEmpty(row[3], "CSV row " + (index + 1) + " template text");
+      const reportTexts = row
+        .slice(3)
+        .map((value) => String(value || "").trim())
+        .filter(Boolean);
+      if (!reportTexts.length) {
+        throw new Error(
+          "CSV row " + (index + 1) + " must include at least one non-empty template text."
+        );
+      }
       const prefix = categoryPrefixes[category];
       if (!prefix) {
         throw new Error("CSV row " + (index + 1) + " has unknown category: " + category);
@@ -722,7 +832,7 @@
       if (found) {
         found.template.title = name;
         found.template.description = description;
-        found.template.reportText = reportText;
+        found.template.reportTexts = reportTexts;
         updated += 1;
       } else {
         const group = nextCategories.find((item) => item.category === category);
@@ -733,7 +843,7 @@
           id: id,
           title: name,
           description: description,
-          reportText: reportText,
+          reportTexts: reportTexts,
           priority: getNextPriority(group),
           enabled: true
         });
@@ -755,7 +865,7 @@
           id: selected.template.id,
           title: selected.template.title,
           description: selected.template.description,
-          reportText: selected.template.reportText,
+          reportTexts: selected.template.reportTexts,
           priority: selected.template.priority,
           enabled: selected.template.enabled
         });
@@ -793,7 +903,7 @@
             id: template.id,
             title: template.title,
             description: template.description,
-            reportText: template.reportText,
+            reportTexts: template.reportTexts,
             priority: template.priority,
             enabled: !!template.enabled
           }))
@@ -835,11 +945,32 @@
         id: found.template.id,
         title: found.template.title,
         description: found.template.description,
-        reportText: found.template.reportText,
+        reportTexts: found.template.reportTexts,
         priority: found.template.priority,
         enabled: found.template.enabled
       });
     }
+  }
+
+  function onVariantListClick(event) {
+    const button = event.target.closest(".variant-remove");
+    if (!button) {
+      return;
+    }
+    const row = button.closest(".variant-item");
+    const container = button.closest(".variant-list");
+    if (!row || !container) {
+      return;
+    }
+
+    const rows = container.querySelectorAll(".variant-item");
+    if (rows.length <= 1) {
+      setStatus("At least one template text variant is required.", true);
+      return;
+    }
+
+    row.remove();
+    renumberVariantRows(container);
   }
 
   function handleError(error) {
@@ -876,6 +1007,12 @@
   els.createResetBtn.addEventListener("click", function () {
     resetCreateForm();
   });
+  els.createAddVariantBtn.addEventListener("click", function () {
+    addVariantRow(els.createReportTexts, "");
+  });
+  els.editAddVariantBtn.addEventListener("click", function () {
+    addVariantRow(els.editReportTexts, "");
+  });
   els.createForm.addEventListener("submit", function (event) {
     try {
       addTemplateToDraft(event);
@@ -896,6 +1033,8 @@
   els.editCancelBtn.addEventListener("click", function () {
     setCreateMode();
   });
+  els.createReportTexts.addEventListener("click", onVariantListClick);
+  els.editReportTexts.addEventListener("click", onVariantListClick);
   els.templateList.addEventListener("click", onListClick);
 
   updateDraftControls();

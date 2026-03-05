@@ -32,13 +32,13 @@ type TemplatesLabCreateBody = {
   category: string;
   name: string;
   errorDescription: string;
-  templateText: string;
+  templateTexts: string[];
 };
 
 type TemplatesLabUpdateBody = {
   name: string;
   errorDescription: string;
-  templateText: string;
+  templateTexts: string[];
   enabled: boolean;
 };
 
@@ -56,6 +56,13 @@ type CreditsSnapshot = {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isNonEmptyStringArray(value: unknown): value is string[] {
+  if (!Array.isArray(value) || !value.length) {
+    return false;
+  }
+  return value.every((item) => typeof item === "string" && !!item.trim());
 }
 
 const TEMPLATES_LAB_INDEX_PATH = fileURLToPath(new URL("./templates-lab/index.html", import.meta.url));
@@ -197,8 +204,8 @@ function assertTemplatesLabCreateBody(body: unknown): asserts body is TemplatesL
   if (typeof body.errorDescription !== "string" || !body.errorDescription.trim()) {
     throw new Error("errorDescription is required.");
   }
-  if (typeof body.templateText !== "string" || !body.templateText.trim()) {
-    throw new Error("templateText is required.");
+  if (!isNonEmptyStringArray(body.templateTexts)) {
+    throw new Error("templateTexts is required.");
   }
 }
 
@@ -212,8 +219,8 @@ function assertTemplatesLabUpdateBody(body: unknown): asserts body is TemplatesL
   if (typeof body.errorDescription !== "string" || !body.errorDescription.trim()) {
     throw new Error("errorDescription is required.");
   }
-  if (typeof body.templateText !== "string" || !body.templateText.trim()) {
-    throw new Error("templateText is required.");
+  if (!isNonEmptyStringArray(body.templateTexts)) {
+    throw new Error("templateTexts is required.");
   }
   if (typeof body.enabled !== "boolean") {
     throw new Error("enabled is required.");
@@ -386,7 +393,7 @@ const app = new Elysia()
         category: body.category,
         name: body.name,
         errorDescription: body.errorDescription,
-        templateText: body.templateText
+        templateTexts: body.templateTexts
       });
     } catch (error) {
       set.status = getErrorStatus(
@@ -410,7 +417,7 @@ const app = new Elysia()
         id: params.id,
         name: body.name,
         errorDescription: body.errorDescription,
-        templateText: body.templateText,
+        templateTexts: body.templateTexts,
         enabled: body.enabled
       });
     } catch (error) {

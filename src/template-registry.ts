@@ -62,6 +62,20 @@ function assertString(value: unknown, context: string): string {
   return value.trim();
 }
 
+function assertStringArray(value: unknown, context: string): string[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`${context} must be an array.`);
+  }
+
+  const normalized = value.map((item, index) =>
+    assertString(item, `${context}[${index}]`)
+  );
+  if (!normalized.length) {
+    throw new Error(`${context} must contain at least one item.`);
+  }
+  return normalized;
+}
+
 function assertBoolean(value: unknown, context: string): boolean {
   if (typeof value !== "boolean") {
     throw new Error(`${context} must be a boolean.`);
@@ -120,7 +134,10 @@ export function validateTemplateRegistryFileData(
         template.description,
         `${fileName}.templates[${index}].description`
       ),
-      reportText: assertString(template.reportText, `${fileName}.templates[${index}].reportText`),
+      reportTexts: assertStringArray(
+        template.reportTexts,
+        `${fileName}.templates[${index}].reportTexts`
+      ),
       priority: assertPriority(template.priority, `${fileName}.templates[${index}].priority`),
       enabled: assertBoolean(template.enabled, `${fileName}.templates[${index}].enabled`)
     };

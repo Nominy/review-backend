@@ -332,6 +332,31 @@ h1 {
   flex-wrap: wrap;
 }
 
+.variant-list {
+  display: grid;
+  gap: 10px;
+}
+
+.variant-item {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-strong);
+}
+
+.variant-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .toggle {
   display: flex;
   align-items: center;

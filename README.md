@@ -17,7 +17,7 @@ Each template entry now contains:
 - `id`
 - `title`
 - `description`
-- `reportText`
+- `reportTexts` (array of 1..N variants; backend picks one deterministically per review action)
 - `priority`
 - `enabled`
 
@@ -98,18 +98,23 @@ The UI now stages create/edit/delete/CSV-import changes locally. Nothing is writ
 CSV export from the UI downloads the current draft as a 4-column file:
 
 ```csv
-category,name,error description,template text
+category,name,error description,template text 1,template text 2,...
 ```
 
 CSV import inside the UI supports two optional toggles:
 - `Ignore first line`: skip the first CSV row entirely and treat the file as data-only
 - `Overwrite existing registry`: replace the current draft with only the templates from the CSV before saving
 
-By default, CSV import expects a header row with exactly:
+By default, CSV import expects a header row that starts with:
 
 ```csv
-category,name,error description,template text
+category,name,error description,template text 1,template text 2,...
 ```
+
+Rules:
+- columns 4+ are treated as template variants
+- empty variant cells are ignored
+- each row must have at least one non-empty variant
 
 ## Endpoints
 

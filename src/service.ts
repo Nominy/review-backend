@@ -65,6 +65,7 @@ async function safeLogAnalytics(input: {
 }
 
 function buildLlmResult(input: {
+  reviewActionId: string;
   prepared: PreparedPayload;
   rawContent: string;
   model: string;
@@ -74,7 +75,11 @@ function buildLlmResult(input: {
   repaired?: boolean;
 }): GenerateResponse {
   const registry = getTemplateRegistry();
-  const rendered = renderFeedbackFromTemplateMatches(input.matchedTemplateIds, registry);
+  const rendered = renderFeedbackFromTemplateMatches(
+    input.reviewActionId,
+    input.matchedTemplateIds,
+    registry
+  );
 
   return {
     prepared: input.prepared,
@@ -116,6 +121,7 @@ export async function generateFeedback(input: {
 
   if (config.openRouterTestMode) {
     const result = buildLlmResult({
+      reviewActionId: input.reviewActionId,
       prepared,
       rawContent: JSON.stringify({ findings: [] }),
       model: "test-mode",
@@ -149,6 +155,7 @@ export async function generateFeedback(input: {
   });
 
   const result = buildLlmResult({
+    reviewActionId: input.reviewActionId,
     prepared,
     rawContent: llmSelection.rawContent,
     model: llmSelection.model,

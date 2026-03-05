@@ -18,14 +18,14 @@ type CreateTemplateInput = {
   category: string;
   name: string;
   errorDescription: string;
-  templateText: string;
+  templateTexts: string[];
 };
 
 type UpdateTemplateInput = {
   id: string;
   name: string;
   errorDescription: string;
-  templateText: string;
+  templateTexts: string[];
   enabled: boolean;
 };
 
@@ -124,6 +124,20 @@ function assertNonEmptyString(value: unknown, field: string): string {
     throw new Error(`${field} must be a non-empty string.`);
   }
   return value.trim();
+}
+
+function assertNonEmptyStringArray(value: unknown, field: string): string[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`${field} must be an array.`);
+  }
+
+  const normalized = value
+    .map((item, index) => assertNonEmptyString(item, `${field}[${index}]`))
+    .filter(Boolean);
+  if (!normalized.length) {
+    throw new Error(`${field} must contain at least one non-empty string.`);
+  }
+  return normalized;
 }
 
 function assertBoolean(value: unknown, field: string): boolean {
@@ -523,13 +537,13 @@ export async function createTemplateForLab(input: CreateTemplateInput): Promise<
     let name = "";
     let category: CategoryName;
     let description = "";
-    let reportText = "";
+    let reportTexts: string[] = [];
 
     try {
       name = assertNonEmptyString(input.name, "name");
       category = assertCategory(input.category);
       description = assertNonEmptyString(input.errorDescription, "errorDescription");
-      reportText = assertNonEmptyString(input.templateText, "templateText");
+      reportTexts = assertNonEmptyStringArray(input.templateTexts, "templateTexts");
     } catch (error) {
       throw withStatusCode(error, 400);
     }
@@ -550,7 +564,7 @@ export async function createTemplateForLab(input: CreateTemplateInput): Promise<
       id,
       title: name,
       description,
-      reportText,
+      reportTexts,
       priority: getNextPriority(file),
       enabled: true
     };
@@ -579,14 +593,14 @@ export async function updateTemplateForLab(input: UpdateTemplateInput): Promise<
     let id = "";
     let title = "";
     let description = "";
-    let reportText = "";
+    let reportTexts: string[] = [];
     let enabled = false;
 
     try {
       id = assertNonEmptyString(input.id, "id");
       title = assertNonEmptyString(input.name, "name");
       description = assertNonEmptyString(input.errorDescription, "errorDescription");
-      reportText = assertNonEmptyString(input.templateText, "templateText");
+      reportTexts = assertNonEmptyStringArray(input.templateTexts, "templateTexts");
       enabled = assertBoolean(input.enabled, "enabled");
     } catch (error) {
       throw withStatusCode(error, 400);
@@ -602,7 +616,7 @@ export async function updateTemplateForLab(input: UpdateTemplateInput): Promise<
 
       template.title = title;
       template.description = description;
-      template.reportText = reportText;
+      template.reportTexts = reportTexts;
       template.enabled = enabled;
       file.version += 1;
 
@@ -640,7 +654,7 @@ export async function importTemplatesFromCsv(csvText: string): Promise<{
         id: string;
         title: string;
         description: string;
-        reportText: string;
+        reportTexts: string[];
       }
     >();
 
@@ -651,13 +665,26 @@ export async function importTemplatesFromCsv(csvText: string): Promise<{
       }
 
       const headers = rows[0].map((value) => normalizeCsvHeader(value));
-      const expectedHeaders = ["category", "name", "error description", "template text"];
+      const expectedHeaders = ["category", "name", "error description"];
 
-      if (
-        headers.length !== expectedHeaders.length ||
-        headers.some((value, index) => value !== expectedHeaders[index])
-      ) {
-        throw new Error(`CSV header must be exactly: ${expectedHeaders.join(", ")}`);
+      if (headers.length < expectedHeaders.length + 1) {
+        throw new Error(
+          "CSV header must include category,name,error description and at least one template text column."
+        );
+      }
+      if (headers.some((value, index) => index < expectedHeaders.length && value !== expectedHeaders[index])) {
+        throw new Error(
+          "CSV header must start with: category,name,error description."
+        );
+      }
+      const variantHeaders = headers.slice(expectedHeaders.length);
+      const invalidVariantHeader = variantHeaders.find(
+        (value, index) => value !== `template text ${index + 1}`
+      );
+      if (invalidVariantHeader) {
+        throw new Error(
+          "Template text headers must be named in order: template text 1, template text 2, ..."
+        );
       }
 
       for (let index = 1; index < rows.length; index += 1) {
@@ -665,8 +692,8 @@ export async function importTemplatesFromCsv(csvText: string): Promise<{
         if (!row.some((value) => value.trim())) {
           continue;
         }
-        if (row.length !== 4) {
-          throw new Error(`CSV row ${index + 1} must have exactly 4 columns.`);
+        if (row.length < 4) {
+          throw new Error(`CSV row ${index + 1} must have at least 4 columns.`);
         }
 
         const category = assertCategory(row[0]);
@@ -675,7 +702,13 @@ export async function importTemplatesFromCsv(csvText: string): Promise<{
           row[2],
           `CSV row ${index + 1} error description`
         );
-        const reportText = assertNonEmptyString(row[3], `CSV row ${index + 1} template text`);
+        const reportTexts = row
+          .slice(3)
+          .map((value) => String(value || "").trim())
+          .filter(Boolean);
+        if (!reportTexts.length) {
+          throw new Error(`CSV row ${index + 1} must contain at least one template text.`);
+        }
         const id = buildTemplateId(category, title);
 
         operationsById.set(id, {
@@ -684,7 +717,7 @@ export async function importTemplatesFromCsv(csvText: string): Promise<{
           id,
           title,
           description,
-          reportText
+          reportTexts
         });
       }
     } catch (error) {
@@ -704,7 +737,7 @@ export async function importTemplatesFromCsv(csvText: string): Promise<{
       if (existing) {
         existing.title = operation.title;
         existing.description = operation.description;
-        existing.reportText = operation.reportText;
+        existing.reportTexts = operation.reportTexts;
         updated += 1;
         results.push({
           rowNumber: operation.rowNumber,
@@ -717,7 +750,7 @@ export async function importTemplatesFromCsv(csvText: string): Promise<{
           id: operation.id,
           title: operation.title,
           description: operation.description,
-          reportText: operation.reportText,
+          reportTexts: operation.reportTexts,
           priority: getNextPriority(file),
           enabled: true
         });

@@ -84,9 +84,12 @@
             <textarea id="createDescription" rows="6" placeholder="Model-facing description"></textarea>
           </label>
           <label>
-            <span>Template Text</span>
-            <textarea id="createReportText" rows="6" placeholder="User-facing template text"></textarea>
+            <span>Template Text Variants</span>
+            <div id="createReportTexts"></div>
           </label>
+          <div class="form-actions">
+            <button id="createAddVariantBtn" type="button" class="secondary">Add Variant</button>
+          </div>
           <div class="form-actions">
             <button id="createSubmitBtn" type="submit">Add To Draft</button>
             <button id="createResetBtn" type="button" class="secondary">Reset</button>
@@ -117,9 +120,12 @@
             <textarea id="editDescription" rows="6"></textarea>
           </label>
           <label>
-            <span>Template Text</span>
-            <textarea id="editReportText" rows="6"></textarea>
+            <span>Template Text Variants</span>
+            <div id="editReportTexts"></div>
           </label>
+          <div class="form-actions">
+            <button id="editAddVariantBtn" type="button" class="secondary">Add Variant</button>
+          </div>
           <label class="toggle">
             <input id="editEnabled" type="checkbox">
             <span>Enabled</span>

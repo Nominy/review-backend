@@ -103,7 +103,7 @@ export type TemplateDefinition = {
   id: string;
   title: string;
   description: string;
-  reportText: string;
+  reportTexts: string[];
   priority: number;
   enabled: boolean;
 };

@@ -23,7 +23,31 @@ function clipNote(note: string, maxLen = 500): string {
   return candidate.trim();
 }
 
+function hash32(input: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function pickTemplateVariant(template: ReviewTemplate, reviewActionId: string): string {
+  const variants = template.reportTexts.map((item) => item.trim()).filter(Boolean);
+  if (!variants.length) {
+    return "";
+  }
+  if (variants.length === 1) {
+    return variants[0];
+  }
+
+  const seed = `${reviewActionId}:${template.id}`;
+  const index = hash32(seed) % variants.length;
+  return variants[index];
+}
+
 export function renderFeedbackFromTemplateMatches(
+  reviewActionId: string,
   matchedTemplateIds: string[],
   registry: LoadedTemplateRegistry = getTemplateRegistry()
 ): {
@@ -60,7 +84,7 @@ export function renderFeedbackFromTemplateMatches(
   for (const category of CATEGORIES) {
     const matches = [...matchedTemplatesByCategory[category]].sort(sortTemplates);
     const baseNote = matches.length
-      ? matches.map((template) => template.reportText.trim()).filter(Boolean).join(" ")
+      ? matches.map((template) => pickTemplateVariant(template, reviewActionId)).filter(Boolean).join(" ")
       : registry.defaultTextByCategory[category];
     const note = clipNote(baseNote);
 
