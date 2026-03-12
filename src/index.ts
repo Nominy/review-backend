@@ -6,6 +6,7 @@ import {
   generateFeedback,
   submitTranscriptReviewActionAnalytics
 } from "./service";
+import { getReviewHistoryDetail, listReviewHistory } from "./history";
 import { config } from "./config";
 import {
   createTemplateForLab,
@@ -273,6 +274,18 @@ function requireTemplatesLabAccess(
   return { error: "Unauthorized" };
 }
 
+function requireHistoryAccess(
+  authorization: string | undefined,
+  set: { status?: number; headers?: Record<string, string> }
+): { error: string } | null {
+  if (!config.templatesLabEnabled) {
+    set.status = 404;
+    return { error: "History API is disabled." };
+  }
+
+  return requireTemplatesLabAccess(authorization, set);
+}
+
 const app = new Elysia()
   .use(
     cors({
@@ -344,6 +357,47 @@ const app = new Elysia()
       const msg = error instanceof Error ? error.message : String(error);
       set.status = msg.includes("required") || msg.includes("Body") ? 400 : 500;
       return { error: msg };
+    }
+  })
+  .get("/api/review-history", async ({ headers, query, set }) => {
+    const blocked = requireHistoryAccess(headers.authorization, set);
+    if (blocked) {
+      return blocked;
+    }
+
+    try {
+      const eventType =
+        query.eventType === "review_generate" || query.eventType === "submit_transcript_review_action"
+          ? query.eventType
+          : "";
+
+      return await listReviewHistory({
+        logPath: config.analyticsLogPath,
+        limit: Number(query.limit),
+        reviewActionId: typeof query.reviewActionId === "string" ? query.reviewActionId : "",
+        eventType,
+        query: typeof query.query === "string" ? query.query : ""
+      });
+    } catch (error) {
+      set.status = getErrorStatus(error, 500);
+      return { error: getErrorMessage(error) };
+    }
+  })
+  .get("/api/review-history/:historyId", async ({ headers, params, set }) => {
+    const blocked = requireHistoryAccess(headers.authorization, set);
+    if (blocked) {
+      return blocked;
+    }
+
+    try {
+      return await getReviewHistoryDetail({
+        logPath: config.analyticsLogPath,
+        historyId: params.historyId
+      });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      set.status = message.includes("not found") || message.includes("Invalid history ID") ? 404 : 500;
+      return { error: message };
     }
   })
   .get("/api/templates-lab/templates", ({ headers, set }) => {

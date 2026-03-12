@@ -121,8 +121,32 @@ Rules:
 - `GET /health`
 - `POST /api/review/prepare`
 - `POST /api/review/generate`
+- `GET /api/review-history`
+- `GET /api/review-history/:historyId`
 - `POST /api/trpc/transcriptions.submitTranscriptReviewAction`
 - `POST /api/analytics/submit-transcript-review-action`
+
+## Protected History API
+
+History browsing reads from `ANALYTICS_LOG_PATH` and is protected with the same HTTP Basic Auth credentials as Templates Lab.
+
+Requirements:
+- `TEMPLATES_LAB_USERNAME`
+- `TEMPLATES_LAB_PASSWORD`
+
+If those env vars are not set, the history API returns `404`.
+
+`GET /api/review-history` query params:
+- `limit` default `50`, capped at `200`
+- `reviewActionId` optional substring filter
+- `query` optional free-text filter over action id, original/current text, and matched template ids
+- `eventType` optional: `review_generate` or `submit_transcript_review_action`
+
+`GET /api/review-history/:historyId` returns:
+- stored `original` / `current` states
+- stored `aiReview`
+- stored metrics analysis snapshot
+- reconstructed `prepared` payload, including the full deterministic prompts
 
 ## `POST /api/review/prepare` body
 
