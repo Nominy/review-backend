@@ -30,6 +30,72 @@ function round(value: number, digits = 0): number {
   return Math.round((Number(value) || 0) * factor) / factor;
 }
 
+function overlapMs(left: Annotation, right: Annotation): number {
+  const start = Math.max(left.startTimeInSeconds, right.startTimeInSeconds);
+  const end = Math.min(left.endTimeInSeconds, right.endTimeInSeconds);
+  return Math.max(0, (end - start) * 1000);
+}
+
+function stripTags(text: string): string {
+  return String(text || "").replace(/<[^>]+>|\[[^\]]+\]|\{[^}]+\}/g, " ");
+}
+
+function tokenize(text: string): string[] {
+  return normalizeWhitespace(text)
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function tokenOverlapRatio(before: string, after: string): number {
+  const left = new Set(tokenize(before));
+  const right = new Set(tokenize(after));
+  if (!left.size || !right.size) {
+    return 0;
+  }
+  let shared = 0;
+  for (const token of left) {
+    if (right.has(token)) {
+      shared += 1;
+    }
+  }
+  return shared / Math.min(left.size, right.size);
+}
+
+function isUsefulLocalChangedPair(input: {
+  before: Annotation;
+  after: Annotation;
+  beforeText: string;
+  afterText: string;
+  tagsChanged: boolean;
+}): boolean {
+  const beforeWordCount = countWords(stripTags(input.beforeText));
+  const afterWordCount = countWords(stripTags(input.afterText));
+  const shorter = Math.max(1, Math.min(beforeWordCount, afterWordCount));
+  const longer = Math.max(beforeWordCount, afterWordCount);
+  const wordRatio = longer / shorter;
+  const overlap = overlapMs(input.before, input.after);
+  const sharedTokenRatio = tokenOverlapRatio(input.beforeText, input.afterText);
+
+  if (input.tagsChanged && (overlap >= 120 || sharedTokenRatio >= 0.45)) {
+    return true;
+  }
+
+  if (overlap < 120) {
+    return false;
+  }
+
+  if (sharedTokenRatio < 0.3) {
+    return false;
+  }
+
+  if (wordRatio > 3) {
+    return false;
+  }
+
+  return true;
+}
+
 function toSegmentSample(annotation: Annotation): PromptSegmentSample {
   return {
     id: annotation.id,
@@ -82,6 +148,16 @@ function buildLocalChangedPairs(
     const tagsChanged = beforeTags.join(" | ") !== afterTags.join(" | ");
 
     if (!textChanged && !tagsChanged) {
+      continue;
+    }
+
+    if (!isUsefulLocalChangedPair({
+      before: pair.before,
+      after: pair.after,
+      beforeText,
+      afterText,
+      tagsChanged
+    })) {
       continue;
     }
 
