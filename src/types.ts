@@ -48,22 +48,10 @@ export type NormalizedState = {
 };
 
 export type PromptTextDiff = {
-  oldId: string;
-  newId: string;
   before: string;
   after: string;
-  oldStartTimeInSeconds: number;
-  oldEndTimeInSeconds: number;
-  newStartTimeInSeconds: number;
-  newEndTimeInSeconds: number;
-};
-
-export type PromptTimingDiff = {
-  oldId: string;
-  newId: string;
-  text: string;
-  startShiftMs: number;
-  endShiftMs: number;
+  beforeTagCount: number;
+  afterTagCount: number;
 };
 
 export type PromptSegmentSample = {
@@ -82,19 +70,107 @@ export type PromptPacket = {
   overview: {
     originalSegments: number;
     currentSegments: number;
-    stablePairs: number;
-    textDiffCount: number;
-    timingDiffCount: number;
-    unmatchedOriginalCount: number;
-    unmatchedCurrentCount: number;
-  };
-  textDiffs: PromptTextDiff[];
-  timingDiffs: PromptTimingDiff[];
-  segmentationDiffs: {
+    originalWords: number;
+    currentWords: number;
     segmentCountDelta: number;
-    unmatchedOriginal: PromptSegmentSample[];
-    unmatchedCurrent: PromptSegmentSample[];
+    localTextChangeCount: number;
+    localTagChangeCount: number;
+    hasBabelDiff: boolean;
   };
+  localTextEvidence: {
+    changedPairs: PromptTextDiff[];
+    originalTagSamples: PromptSegmentSample[];
+    currentTagSamples: PromptSegmentSample[];
+    originalOnlySamples: PromptSegmentSample[];
+    currentOnlySamples: PromptSegmentSample[];
+    originalTagSegmentCount: number;
+    currentTagSegmentCount: number;
+  };
+  babelDiff?: {
+    referenceReviewActionId: string;
+    currentReviewActionId: string;
+    segmentation: {
+      overview: {
+        mappingCount: number;
+        unchangedCount: number;
+        modifiedCount: number;
+        splitCount: number;
+        mergeCount: number;
+        addedCount: number;
+        deletedCount: number;
+      };
+      samples: Array<{
+        relationship: string;
+        referenceText: string;
+        hypothesisText: string;
+        referenceSegmentCount: number;
+        hypothesisSegmentCount: number;
+        substitutions: number;
+        insertions: number;
+        deletions: number;
+      }>;
+    };
+    timestamp: {
+      overview: {
+        precision: number | null;
+        recall: number | null;
+        f1: number | null;
+        totalSegments: number | null;
+        matchedSegments: number | null;
+        unmatchedSegments: number | null;
+        avgShiftMs: number | null;
+        within50ms: number | null;
+        within100ms: number | null;
+        within200ms: number | null;
+      };
+      samples: Array<{
+        refText: string;
+        startShiftMs: number;
+        endShiftMs: number;
+        avgShiftMs: number;
+        quality: string;
+      }>;
+    };
+    wordAccuracy: {
+      overview: {
+        overallWordErrorRate: number | null;
+        totalReferenceWords: number | null;
+        totalHypothesisWords: number | null;
+        totalInsertions: number | null;
+        totalDeletions: number | null;
+        totalSubstitutions: number | null;
+      };
+      speakerBreakdown: Array<{
+        processedRecordingId: string;
+        wordErrorRate: number | null;
+        totalReferenceWords: number | null;
+        totalHypothesisWords: number | null;
+        insertions: number | null;
+        deletions: number | null;
+        substitutions: number | null;
+      }>;
+      wordDiffSamples: Array<{
+        processedRecordingId: string;
+        referenceText: string;
+        hypothesisText: string;
+        changedTokens: Array<{
+          value: string;
+          status: string;
+        }>;
+      }>;
+    };
+  };
+};
+
+export type BabelDiffPayload = {
+  reviewActionsPayload?: unknown;
+  diffPayload?: unknown;
+  referenceReviewActionId?: string;
+  currentReviewActionId?: string;
+  transcriptionChunkId?: string;
+  reviewActionsUrl?: string;
+  diffUrl?: string;
+  capturedAt?: string;
 };
 
 export type TemplateCategory = CategoryName;

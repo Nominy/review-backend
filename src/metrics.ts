@@ -1,20 +1,15 @@
 import type {
   Annotation,
+  BabelDiffPayload,
   NormalizedState,
   PromptPacket,
   PromptSegmentSample,
-  PromptTextDiff,
-  PromptTimingDiff
+  PromptTextDiff
 } from "./types";
+import { buildBabelDiffPromptPacket } from "./babel-diff";
 
-export const METRICS_VERSION = "v4";
-export const PROMPT_VERSION = "v6";
-
-type LinkSummary = {
-  oldToNew: Map<string, string[]>;
-  newToOld: Map<string, string[]>;
-  stablePairs: Array<{ oldId: string; newId: string }>;
-};
+export const METRICS_VERSION = "v5";
+export const PROMPT_VERSION = "v8";
 
 function normalizeWhitespace(text: string): string {
   return String(text || "").replace(/\s+/g, " ").trim();
@@ -35,76 +30,6 @@ function round(value: number, digits = 0): number {
   return Math.round((Number(value) || 0) * factor) / factor;
 }
 
-function overlapMs(a: Annotation, b: Annotation): number {
-  const start = Math.max(a.startTimeInSeconds, b.startTimeInSeconds);
-  const end = Math.min(a.endTimeInSeconds, b.endTimeInSeconds);
-  return Math.max(0, (end - start) * 1000);
-}
-
-function durationMs(annotation: Annotation): number {
-  return Math.max(0, (annotation.endTimeInSeconds - annotation.startTimeInSeconds) * 1000);
-}
-
-function buildLinks(oldAnnotations: Annotation[], newAnnotations: Annotation[]): LinkSummary {
-  const oldToNew = new Map<string, string[]>();
-  const newToOld = new Map<string, string[]>();
-  const oldStrongLinks = new Map<string, Array<{ id: string; overlap: number }>>();
-  const newStrongLinks = new Map<string, Array<{ id: string; overlap: number }>>();
-
-  for (const oldSeg of oldAnnotations) {
-    oldToNew.set(oldSeg.id, []);
-    oldStrongLinks.set(oldSeg.id, []);
-  }
-  for (const newSeg of newAnnotations) {
-    newToOld.set(newSeg.id, []);
-    newStrongLinks.set(newSeg.id, []);
-  }
-
-  for (const oldSeg of oldAnnotations) {
-    for (const newSeg of newAnnotations) {
-      const overlap = overlapMs(oldSeg, newSeg);
-      const minDuration = Math.min(durationMs(oldSeg), durationMs(newSeg));
-      const strongEnough = overlap >= 120 && overlap >= minDuration * 0.25;
-      if (!strongEnough) continue;
-      oldToNew.get(oldSeg.id)?.push(newSeg.id);
-      newToOld.get(newSeg.id)?.push(oldSeg.id);
-      oldStrongLinks.get(oldSeg.id)?.push({ id: newSeg.id, overlap });
-      newStrongLinks.get(newSeg.id)?.push({ id: oldSeg.id, overlap });
-    }
-  }
-
-  const bestOldToNew = new Map<string, string>();
-  for (const [oldId, links] of oldStrongLinks.entries()) {
-    const best = [...links].sort((a, b) => b.overlap - a.overlap)[0];
-    if (best) {
-      bestOldToNew.set(oldId, best.id);
-    }
-  }
-
-  const bestNewToOld = new Map<string, string>();
-  for (const [newId, links] of newStrongLinks.entries()) {
-    const best = [...links].sort((a, b) => b.overlap - a.overlap)[0];
-    if (best) {
-      bestNewToOld.set(newId, best.id);
-    }
-  }
-
-  const stablePairs: Array<{ oldId: string; newId: string }> = [];
-  for (const [oldId, newId] of bestOldToNew.entries()) {
-    const oldLinks = oldToNew.get(oldId) || [];
-    const newLinks = newToOld.get(newId) || [];
-
-    // Only treat a pair as stable when the overlap graph is strictly one-to-one.
-    // Split/merge structures should stay in segmentationDiffs instead of leaking
-    // into textDiffs and timingDiffs as if they were simple replacements.
-    if (oldLinks.length === 1 && newLinks.length === 1 && bestNewToOld.get(newId) === oldId) {
-      stablePairs.push({ oldId, newId });
-    }
-  }
-
-  return { oldToNew, newToOld, stablePairs };
-}
-
 function toSegmentSample(annotation: Annotation): PromptSegmentSample {
   return {
     id: annotation.id,
@@ -114,10 +39,86 @@ function toSegmentSample(annotation: Annotation): PromptSegmentSample {
   };
 }
 
+function extractTagTokens(text: string): string[] {
+  const value = String(text || "");
+  const matches = value.match(/<[^>]+>|\[[^\]]+\]|\{[^}]+\}/g);
+  return matches ? matches.map((item) => normalizeWhitespace(item)).filter(Boolean) : [];
+}
+
+function pairAnnotationsByIndex(
+  original: Annotation[],
+  current: Annotation[]
+): Array<{ before: Annotation; after: Annotation }> {
+  const count = Math.min(original.length, current.length);
+  const pairs: Array<{ before: Annotation; after: Annotation }> = [];
+  for (let index = 0; index < count; index += 1) {
+    const before = original[index];
+    const after = current[index];
+    if (!before || !after) continue;
+    pairs.push({ before, after });
+  }
+  return pairs;
+}
+
+function buildLocalChangedPairs(
+  original: Annotation[],
+  current: Annotation[]
+): {
+  changedPairs: PromptTextDiff[];
+  localTextChangeCount: number;
+  localTagChangeCount: number;
+} {
+  const pairs = pairAnnotationsByIndex(original, current);
+  const changedPairs: PromptTextDiff[] = [];
+  let localTextChangeCount = 0;
+  let localTagChangeCount = 0;
+
+  for (const pair of pairs) {
+    const beforeText = normalizeWhitespace(pair.before.content || "");
+    const afterText = normalizeWhitespace(pair.after.content || "");
+    const beforeTags = extractTagTokens(pair.before.content || "");
+    const afterTags = extractTagTokens(pair.after.content || "");
+    const textChanged = beforeText !== afterText;
+    const tagsChanged = beforeTags.join(" | ") !== afterTags.join(" | ");
+
+    if (!textChanged && !tagsChanged) {
+      continue;
+    }
+
+    if (textChanged) localTextChangeCount += 1;
+    if (tagsChanged) localTagChangeCount += 1;
+
+    changedPairs.push({
+      before: clipText(beforeText, 220),
+      after: clipText(afterText, 220),
+      beforeTagCount: beforeTags.length,
+      afterTagCount: afterTags.length
+    });
+  }
+
+  return {
+    changedPairs: changedPairs.slice(0, 24),
+    localTextChangeCount,
+    localTagChangeCount
+  };
+}
+
+function buildTagSamples(annotations: Annotation[]): {
+  tagSamples: PromptSegmentSample[];
+  tagSegmentCount: number;
+} {
+  const withTags = annotations.filter((annotation) => extractTagTokens(annotation.content || "").length > 0);
+  return {
+    tagSamples: withTags.slice(0, 12).map(toSegmentSample),
+    tagSegmentCount: withTags.length
+  };
+}
+
 export function computeReviewMetrics(
   original: NormalizedState,
   current: NormalizedState,
-  actionId: string
+  actionId: string,
+  babelDiff?: BabelDiffPayload | null
 ): {
   stats: Record<string, unknown>;
   featurePacket: Record<string, unknown>;
@@ -126,66 +127,22 @@ export function computeReviewMetrics(
 } {
   const oldAnnotations = Array.isArray(original.annotations) ? original.annotations : [];
   const newAnnotations = Array.isArray(current.annotations) ? current.annotations : [];
-  const oldMap = new Map(oldAnnotations.map((annotation) => [annotation.id, annotation]));
-  const newMap = new Map(newAnnotations.map((annotation) => [annotation.id, annotation]));
-  const links = buildLinks(oldAnnotations, newAnnotations);
-  const stableOldIds = new Set(links.stablePairs.map((pair) => pair.oldId));
-  const stableNewIds = new Set(links.stablePairs.map((pair) => pair.newId));
+  const babelDiffPacket = buildBabelDiffPromptPacket(babelDiff);
 
-  const textDiffs: PromptTextDiff[] = [];
-  const timingDiffs: PromptTimingDiff[] = [];
+  const oldText = oldAnnotations.map((annotation) => annotation.content || "").join(" ");
+  const newText = newAnnotations.map((annotation) => annotation.content || "").join(" ");
+  const originalWords = countWords(oldText);
+  const currentWords = countWords(newText);
 
-  for (const pair of links.stablePairs) {
-    const before = oldMap.get(pair.oldId);
-    const after = newMap.get(pair.newId);
-    if (!before || !after) continue;
-
-    const beforeText = normalizeWhitespace(before.content || "");
-    const afterText = normalizeWhitespace(after.content || "");
-
-    if (beforeText !== afterText) {
-      textDiffs.push({
-        oldId: before.id,
-        newId: after.id,
-        before: clipText(beforeText, 220),
-        after: clipText(afterText, 220),
-        oldStartTimeInSeconds: round(before.startTimeInSeconds, 3),
-        oldEndTimeInSeconds: round(before.endTimeInSeconds, 3),
-        newStartTimeInSeconds: round(after.startTimeInSeconds, 3),
-        newEndTimeInSeconds: round(after.endTimeInSeconds, 3)
-      });
-    }
-
-    const startShiftMs = Math.round((after.startTimeInSeconds - before.startTimeInSeconds) * 1000);
-    const endShiftMs = Math.round((after.endTimeInSeconds - before.endTimeInSeconds) * 1000);
-    if (Math.abs(startShiftMs) >= 120 || Math.abs(endShiftMs) >= 120) {
-      timingDiffs.push({
-        oldId: before.id,
-        newId: after.id,
-        text: clipText(afterText || beforeText, 220),
-        startShiftMs,
-        endShiftMs
-      });
-    }
-  }
-
-  const unmatchedOriginal = oldAnnotations
-    .filter((annotation) => !stableOldIds.has(annotation.id))
-    .map(toSegmentSample);
-  const unmatchedCurrent = newAnnotations
-    .filter((annotation) => !stableNewIds.has(annotation.id))
-    .map(toSegmentSample);
-
-  const limitedTextDiffs = textDiffs.slice(0, 24);
-  const limitedTimingDiffs = timingDiffs
-    .sort(
-      (left, right) =>
-        Math.max(Math.abs(right.startShiftMs), Math.abs(right.endShiftMs)) -
-        Math.max(Math.abs(left.startShiftMs), Math.abs(left.endShiftMs))
-    )
-    .slice(0, 24);
-  const limitedUnmatchedOriginal = unmatchedOriginal.slice(0, 12);
-  const limitedUnmatchedCurrent = unmatchedCurrent.slice(0, 12);
+  const {
+    changedPairs,
+    localTextChangeCount,
+    localTagChangeCount
+  } = buildLocalChangedPairs(oldAnnotations, newAnnotations);
+  const originalTags = buildTagSamples(oldAnnotations);
+  const currentTags = buildTagSamples(newAnnotations);
+  const originalOnlySamples = oldAnnotations.slice(newAnnotations.length, newAnnotations.length + 12).map(toSegmentSample);
+  const currentOnlySamples = newAnnotations.slice(oldAnnotations.length, oldAnnotations.length + 12).map(toSegmentSample);
 
   const promptPacket: PromptPacket = {
     session: {
@@ -196,55 +153,60 @@ export function computeReviewMetrics(
     overview: {
       originalSegments: oldAnnotations.length,
       currentSegments: newAnnotations.length,
-      stablePairs: links.stablePairs.length,
-      textDiffCount: textDiffs.length,
-      timingDiffCount: timingDiffs.length,
-      unmatchedOriginalCount: unmatchedOriginal.length,
-      unmatchedCurrentCount: unmatchedCurrent.length
-    },
-    textDiffs: limitedTextDiffs,
-    timingDiffs: limitedTimingDiffs,
-    segmentationDiffs: {
+      originalWords,
+      currentWords,
       segmentCountDelta: newAnnotations.length - oldAnnotations.length,
-      unmatchedOriginal: limitedUnmatchedOriginal,
-      unmatchedCurrent: limitedUnmatchedCurrent
-    }
+      localTextChangeCount,
+      localTagChangeCount,
+      hasBabelDiff: !!babelDiffPacket
+    },
+    localTextEvidence: {
+      changedPairs,
+      originalTagSamples: originalTags.tagSamples,
+      currentTagSamples: currentTags.tagSamples,
+      originalOnlySamples,
+      currentOnlySamples,
+      originalTagSegmentCount: originalTags.tagSegmentCount,
+      currentTagSegmentCount: currentTags.tagSegmentCount
+    },
+    ...(babelDiffPacket ? { babelDiff: babelDiffPacket } : {})
   };
-
-  const oldText = oldAnnotations.map((annotation) => annotation.content || "").join(" ");
-  const newText = newAnnotations.map((annotation) => annotation.content || "").join(" ");
 
   const featurePacket = {
     session: promptPacket.session,
     overview: promptPacket.overview,
-    samples: {
-      textDiffs: limitedTextDiffs,
-      timingDiffs: limitedTimingDiffs,
-      unmatchedOriginal: limitedUnmatchedOriginal,
-      unmatchedCurrent: limitedUnmatchedCurrent
-    }
+    localTextEvidence: {
+      changedPairs: promptPacket.localTextEvidence.changedPairs,
+      originalTagSamples: promptPacket.localTextEvidence.originalTagSamples,
+      currentTagSamples: promptPacket.localTextEvidence.currentTagSamples,
+      originalOnlySamples: promptPacket.localTextEvidence.originalOnlySamples,
+      currentOnlySamples: promptPacket.localTextEvidence.currentOnlySamples,
+      originalTagSegmentCount: promptPacket.localTextEvidence.originalTagSegmentCount,
+      currentTagSegmentCount: promptPacket.localTextEvidence.currentTagSegmentCount
+    },
+    ...(babelDiffPacket ? { babelDiff: babelDiffPacket } : {})
   };
 
   const stats = {
     original: {
       annotations: oldAnnotations.length,
-      words: countWords(oldText),
-      lintErrors: Array.isArray(original.lintErrors) ? original.lintErrors.length : 0
+      words: originalWords,
+      lintErrors: Array.isArray(original.lintErrors) ? original.lintErrors.length : 0,
+      tagSegments: originalTags.tagSegmentCount
     },
     current: {
       annotations: newAnnotations.length,
-      words: countWords(newText),
-      lintErrors: Array.isArray(current.lintErrors) ? current.lintErrors.length : 0
+      words: currentWords,
+      lintErrors: Array.isArray(current.lintErrors) ? current.lintErrors.length : 0,
+      tagSegments: currentTags.tagSegmentCount
     },
     changes: {
-      stablePairs: links.stablePairs.length,
-      textDiffCount: textDiffs.length,
-      timingDiffCount: timingDiffs.length,
-      unmatchedOriginalCount: unmatchedOriginal.length,
-      unmatchedCurrentCount: unmatchedCurrent.length,
+      localTextChangeCount,
+      localTagChangeCount,
       segmentCountDelta: newAnnotations.length - oldAnnotations.length,
       previewBefore: clipText(oldText, 240),
-      previewAfter: clipText(newText, 240)
+      previewAfter: clipText(newText, 240),
+      babelDiffUsed: !!babelDiffPacket
     }
   };
 

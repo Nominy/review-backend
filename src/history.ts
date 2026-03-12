@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { buildPreparedPayload } from "./service";
-import type { NormalizedState } from "./types";
+import type { BabelDiffPayload, NormalizedState } from "./types";
 
 type AnalyticsEventType = "review_generate" | "submit_transcript_review_action";
 
@@ -22,6 +22,7 @@ type RawHistoryEntry = {
   reviewActionId?: string;
   original?: NormalizedState;
   current?: NormalizedState;
+  babelDiff?: BabelDiffPayload;
   originalText?: string;
   currentText?: string;
   aiReview?: unknown;
@@ -52,6 +53,7 @@ export type ReviewHistoryDetail = {
   reviewActionId: string;
   original: NormalizedState;
   current: NormalizedState;
+  babelDiff?: BabelDiffPayload;
   originalText: string;
   currentText: string;
   aiReview: unknown;
@@ -128,6 +130,7 @@ function parseHistoryEntry(line: string): RawHistoryEntry | null {
     reviewActionId,
     original,
     current,
+    babelDiff: isObject(parsed.babelDiff) ? (parsed.babelDiff as BabelDiffPayload) : undefined,
     originalText: typeof parsed.originalText === "string" ? parsed.originalText : "",
     currentText: typeof parsed.currentText === "string" ? parsed.currentText : "",
     aiReview: "aiReview" in parsed ? parsed.aiReview : null,
@@ -253,6 +256,7 @@ export async function getReviewHistoryDetail(input: {
     reviewActionId: entry.reviewActionId,
     original: entry.original,
     current: entry.current,
+    ...(entry.babelDiff ? { babelDiff: entry.babelDiff } : {}),
     originalText: entry.originalText || "",
     currentText: entry.currentText || "",
     aiReview: entry.aiReview ?? null,
@@ -261,7 +265,8 @@ export async function getReviewHistoryDetail(input: {
     reconstructedPrepared: buildPreparedPayload({
       reviewActionId: entry.reviewActionId,
       original: entry.original,
-      current: entry.current
+      current: entry.current,
+      babelDiff: entry.babelDiff ?? null
     })
   };
 }

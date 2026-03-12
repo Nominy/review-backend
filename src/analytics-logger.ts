@@ -1,6 +1,6 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { NormalizedState, PreparedPayload } from "./types";
+import type { BabelDiffPayload, NormalizedState, PreparedPayload } from "./types";
 
 type AnalyticsEventType = "review_generate" | "submit_transcript_review_action";
 
@@ -14,6 +14,7 @@ type ReviewAnalyticsLogEntry = {
   currentText: string;
   original: NormalizedState;
   current: NormalizedState;
+  babelDiff?: BabelDiffPayload | null;
   metricsAnalysis: {
     stats: Record<string, unknown>;
     featurePacket: Record<string, unknown>;
@@ -84,6 +85,7 @@ export async function logReviewAnalytics(input: {
   reviewActionId: string;
   original: NormalizedState;
   current: NormalizedState;
+  babelDiff?: BabelDiffPayload | null;
   prepared: PreparedPayload;
   aiReview?: unknown;
   inputBoxes?: Record<string, unknown>;
@@ -102,6 +104,7 @@ export async function logReviewAnalytics(input: {
     currentText: stateToText(input.current),
     original: input.original,
     current: input.current,
+    ...(input.babelDiff ? { babelDiff: input.babelDiff } : {}),
     metricsAnalysis: {
       stats: input.prepared.stats,
       featurePacket: input.prepared.featurePacket,

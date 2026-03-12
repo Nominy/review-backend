@@ -15,12 +15,13 @@ import {
   saveTemplatesLabDraft,
   updateTemplateForLab
 } from "./template-admin";
-import type { NormalizedState } from "./types";
+import type { BabelDiffPayload, NormalizedState } from "./types";
 
 type PrepareBody = {
   reviewActionId: string;
   original: NormalizedState;
   current: NormalizedState;
+  babelDiff?: BabelDiffPayload | null;
 };
 
 type SubmitTranscriptReviewActionBody = PrepareBody & {
@@ -170,6 +171,9 @@ function assertPrepareBody(body: unknown): asserts body is PrepareBody {
   }
   if (!isObject(body.original) || !isObject(body.current)) {
     throw new Error("original and current are required.");
+  }
+  if (body.babelDiff !== undefined && body.babelDiff !== null && !isObject(body.babelDiff)) {
+    throw new Error("babelDiff must be an object when provided.");
   }
 }
 
@@ -337,7 +341,8 @@ const app = new Elysia()
       return buildPreparedPayload({
         reviewActionId: body.reviewActionId,
         original: body.original,
-        current: body.current
+        current: body.current,
+        babelDiff: body.babelDiff ?? null
       });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -351,7 +356,8 @@ const app = new Elysia()
       return await generateFeedback({
         reviewActionId: body.reviewActionId,
         original: body.original,
-        current: body.current
+        current: body.current,
+        babelDiff: body.babelDiff ?? null
       });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -516,6 +522,7 @@ const app = new Elysia()
         reviewActionId: body.reviewActionId,
         original: body.original,
         current: body.current,
+        babelDiff: body.babelDiff ?? null,
         inputBoxes: body.inputBoxes,
         aiReview: body.aiReview,
         metadata: body.metadata
@@ -533,6 +540,7 @@ const app = new Elysia()
         reviewActionId: body.reviewActionId,
         original: body.original,
         current: body.current,
+        babelDiff: body.babelDiff ?? null,
         inputBoxes: body.inputBoxes,
         aiReview: body.aiReview,
         metadata: body.metadata

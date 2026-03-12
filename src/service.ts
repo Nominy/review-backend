@@ -7,6 +7,7 @@ import { logReviewAnalytics } from "./analytics-logger";
 import { getTemplateRegistry } from "./template-registry";
 import { renderFeedbackFromTemplateMatches } from "./template-renderer";
 import type {
+  BabelDiffPayload,
   GenerateResponse,
   NormalizedState,
   PreparedPayload,
@@ -17,8 +18,14 @@ export function buildPreparedPayload(input: {
   reviewActionId: string;
   original: NormalizedState;
   current: NormalizedState;
+  babelDiff?: BabelDiffPayload | null;
 }): PreparedPayload {
-  const computed = computeReviewMetrics(input.original, input.current, input.reviewActionId);
+  const computed = computeReviewMetrics(
+    input.original,
+    input.current,
+    input.reviewActionId,
+    input.babelDiff
+  );
   const registry = getTemplateRegistry();
   const prompts = buildPrompts(computed.promptPacket, registry.promptCatalog);
 
@@ -38,6 +45,7 @@ async function safeLogAnalytics(input: {
   original: NormalizedState;
   current: NormalizedState;
   prepared: PreparedPayload;
+  babelDiff?: BabelDiffPayload | null;
   aiReview?: unknown;
   inputBoxes?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
@@ -50,6 +58,7 @@ async function safeLogAnalytics(input: {
       original: input.original,
       current: input.current,
       prepared: input.prepared,
+      babelDiff: input.babelDiff,
       aiReview: input.aiReview,
       inputBoxes: input.inputBoxes,
       metadata: input.metadata,
@@ -100,6 +109,7 @@ export async function generateFeedback(input: {
   reviewActionId: string;
   original: NormalizedState;
   current: NormalizedState;
+  babelDiff?: BabelDiffPayload | null;
 }): Promise<GenerateResponse> {
   try {
     await logReviewTextPair({
@@ -135,6 +145,7 @@ export async function generateFeedback(input: {
       reviewActionId: input.reviewActionId,
       original: input.original,
       current: input.current,
+      babelDiff: input.babelDiff,
       prepared: result.prepared,
       aiReview: result.llm,
       metadata: {
@@ -170,6 +181,7 @@ export async function generateFeedback(input: {
     reviewActionId: input.reviewActionId,
     original: input.original,
     current: input.current,
+    babelDiff: input.babelDiff,
     prepared: result.prepared,
     aiReview: result.llm,
     metadata: {
@@ -186,6 +198,7 @@ export async function submitTranscriptReviewActionAnalytics(input: {
   reviewActionId: string;
   original: NormalizedState;
   current: NormalizedState;
+  babelDiff?: BabelDiffPayload | null;
   inputBoxes?: Record<string, unknown>;
   aiReview?: unknown;
   metadata?: Record<string, unknown>;
@@ -193,7 +206,8 @@ export async function submitTranscriptReviewActionAnalytics(input: {
   const prepared = buildPreparedPayload({
     reviewActionId: input.reviewActionId,
     original: input.original,
-    current: input.current
+    current: input.current,
+    babelDiff: input.babelDiff
   });
 
   await safeLogAnalytics({
@@ -201,6 +215,7 @@ export async function submitTranscriptReviewActionAnalytics(input: {
     reviewActionId: input.reviewActionId,
     original: input.original,
     current: input.current,
+    babelDiff: input.babelDiff,
     prepared,
     aiReview: input.aiReview ?? null,
     inputBoxes: input.inputBoxes ?? {},
