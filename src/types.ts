@@ -101,6 +101,7 @@ export type PromptPacket = {
       };
       samples: Array<{
         relationship: string;
+        structuralSeverity: string;
         referenceText: string;
         hypothesisText: string;
         referenceSegmentCount: number;
@@ -108,6 +109,24 @@ export type PromptPacket = {
         substitutions: number;
         insertions: number;
         deletions: number;
+        changedTokens: Array<{
+          value: string;
+          status: string;
+        }>;
+        referenceSegments: Array<{
+          annotationId: string;
+          text: string;
+          startTimeInSeconds: number | null;
+          endTimeInSeconds: number | null;
+          wordRange: [number, number] | null;
+        }>;
+        hypothesisSegments: Array<{
+          annotationId: string;
+          text: string;
+          startTimeInSeconds: number | null;
+          endTimeInSeconds: number | null;
+          wordRange: [number, number] | null;
+        }>;
       }>;
     };
     timestamp: {

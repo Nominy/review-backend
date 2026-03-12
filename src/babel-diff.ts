@@ -61,6 +61,52 @@ function toChangedTokenSamples(wordDiffs: unknown, maxItems: number): Array<{ va
   return samples;
 }
 
+function toWordRange(value: unknown): [number, number] | null {
+  if (!Array.isArray(value) || value.length < 2) {
+    return null;
+  }
+  const start = Number(value[0]);
+  const end = Number(value[1]);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) {
+    return null;
+  }
+  return [start, end];
+}
+
+function toMappingSegments(value: unknown): Array<{
+  annotationId: string;
+  text: string;
+  startTimeInSeconds: number | null;
+  endTimeInSeconds: number | null;
+  wordRange: [number, number] | null;
+}> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item) => isObject(item))
+    .map((item) => ({
+      annotationId: toStringValue(item.annotationId),
+      text: clipText(toStringValue(item.text), 220),
+      startTimeInSeconds: toNumberOrNull(item.startTimeInSeconds),
+      endTimeInSeconds: toNumberOrNull(item.endTimeInSeconds),
+      wordRange: toWordRange(item.wordRange)
+    }));
+}
+
+function classifyStructuralSeverity(relationship: string): string {
+  if (relationship === "split" || relationship === "merged") {
+    return "high";
+  }
+  if (relationship === "added" || relationship === "deleted") {
+    return "medium";
+  }
+  if (relationship === "modified") {
+    return "low";
+  }
+  return "info";
+}
+
 export function buildBabelDiffPromptPacket(
   input: BabelDiffPayload | null | undefined
 ): BabelDiffPromptPacket | undefined {
@@ -95,7 +141,7 @@ export function buildBabelDiffPromptPacket(
     if (relationship === "unchanged") unchangedCount += 1;
     else if (relationship === "modified") modifiedCount += 1;
     else if (relationship === "split") splitCount += 1;
-    else if (relationship === "merge") mergeCount += 1;
+    else if (relationship === "merged") mergeCount += 1;
     else if (relationship === "added") addedCount += 1;
     else if (relationship === "deleted") deletedCount += 1;
 
@@ -103,17 +149,21 @@ export function buildBabelDiffPromptPacket(
       continue;
     }
 
-    const segmentsA = Array.isArray(item.segmentsA) ? item.segmentsA : [];
-    const segmentsB = Array.isArray(item.segmentsB) ? item.segmentsB : [];
+    const segmentsA = toMappingSegments(item.segmentsA);
+    const segmentsB = toMappingSegments(item.segmentsB);
     segmentationSamples.push({
       relationship,
+      structuralSeverity: classifyStructuralSeverity(relationship),
       referenceText: clipText(toStringValue(item.referenceText), 220),
       hypothesisText: clipText(toStringValue(item.hypothesisText), 220),
       referenceSegmentCount: segmentsA.length,
       hypothesisSegmentCount: segmentsB.length,
       substitutions: Number(item.substitutions) || 0,
       insertions: Number(item.insertions) || 0,
-      deletions: Number(item.deletions) || 0
+      deletions: Number(item.deletions) || 0,
+      changedTokens: toChangedTokenSamples(item.wordDiffs, 16),
+      referenceSegments: segmentsA,
+      hypothesisSegments: segmentsB
     });
   }
 
