@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { buildPrompts } from "./prompt";
 import { computeReviewMetrics } from "./metrics";
 import { sendToOpenRouter } from "./openrouter";
+import { runDeterministicRules } from "./deterministic-rules";
 import { getTemplateRegistry } from "./template-registry";
 import { loadDefaultEnvFiles, loadEnvFile } from "./load-env";
 import type { Annotation, NormalizedState } from "./types";
@@ -159,12 +160,13 @@ async function main(): Promise<void> {
     const promptChars = prompts.systemPrompt.length + prompts.userPrompt.length;
 
     if (args.dryRun) {
+      const deterministicFindings = runDeterministicRules(computed.promptPacket);
       results.push({
         id: testCase.id,
         status: "DRY",
         promptChars,
         required: testCase.requiredFindings,
-        predicted: [],
+        predicted: deterministicFindings,
         missing: [],
         unexpected: [],
         latencyMs: 0,
@@ -174,20 +176,32 @@ async function main(): Promise<void> {
     }
 
     try {
+      const deterministicFindings = runDeterministicRules(computed.promptPacket);
       const response = await sendToOpenRouter({
         apiKey,
         model,
         prompts,
         registry
       });
-      const graded = evaluateFindings(testCase, response.findings);
+
+      // Merge deterministic + LLM findings, deduplicated
+      const seen = new Set<string>(deterministicFindings);
+      const mergedFindings = [...deterministicFindings];
+      for (const id of response.findings) {
+        if (!seen.has(id)) {
+          seen.add(id);
+          mergedFindings.push(id);
+        }
+      }
+
+      const graded = evaluateFindings(testCase, mergedFindings);
 
       results.push({
         id: testCase.id,
         status: graded.status,
         promptChars,
         required: sorted(new Set(testCase.requiredFindings)),
-        predicted: sorted(new Set(response.findings)),
+        predicted: sorted(new Set(mergedFindings)),
         missing: sorted(new Set(graded.missing)),
         unexpected: sorted(new Set(graded.unexpected)),
         latencyMs: response.latencyMs,

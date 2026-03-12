@@ -9,7 +9,7 @@ import type {
 import { buildBabelDiffPromptPacket } from "./babel-diff";
 
 export const METRICS_VERSION = "v5";
-export const PROMPT_VERSION = "v9";
+export const PROMPT_VERSION = "v10";
 
 function normalizeWhitespace(text: string): string {
   return String(text || "").replace(/\s+/g, " ").trim();

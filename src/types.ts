@@ -225,6 +225,22 @@ export type TemplateSelectionResponse = {
   findings: string[];
 };
 
+export type ChangeType = "TEXT" | "TIMESTAMP" | "SEGMENTATION" | "WORD_DIFF" | "TAG";
+
+export type Change = {
+  index: number;
+  type: ChangeType;
+  categories: CategoryName[];
+  description: string;
+};
+
+export type ClassificationResponse = {
+  classifications: Array<{
+    change: number;
+    templateId: string;
+  }>;
+};
+
 export type PreparedPayload = {
   preparedAt: string;
   stats: Record<string, unknown>;

@@ -60,7 +60,7 @@ function parseModelJson(text: string): unknown {
   throw new Error("Model response is not valid JSON.");
 }
 
-function validateFindings(
+function validateClassifications(
   payload: unknown,
   registry: LoadedTemplateRegistry
 ): TemplateSelectionResponse {
@@ -68,25 +68,35 @@ function validateFindings(
     throw new Error("Model output must be an object.");
   }
 
-  const rawFindings = (payload as Record<string, unknown>).findings;
-  if (!Array.isArray(rawFindings)) {
-    throw new Error("Model output must contain a findings array.");
+  const record = payload as Record<string, unknown>;
+
+  // Accept both new schema {"classifications": [...]} and legacy {"findings": [...]}
+  const rawClassifications = record.classifications ?? record.findings;
+  if (!Array.isArray(rawClassifications)) {
+    throw new Error("Model output must contain a classifications (or findings) array.");
   }
 
   const seen = new Set<string>();
   const findings: string[] = [];
 
-  for (const item of rawFindings) {
-    if (typeof item !== "string") {
-      throw new Error("Each finding must be a string template id.");
+  for (const item of rawClassifications) {
+    let templateId: string;
+
+    if (typeof item === "string") {
+      // Legacy format: plain string template ID
+      templateId = item.trim();
+    } else if (item && typeof item === "object" && "templateId" in item) {
+      // New format: {"change": N, "templateId": "..."}
+      templateId = String((item as Record<string, unknown>).templateId).trim();
+    } else {
+      continue; // skip malformed entries instead of throwing
     }
 
-    const templateId = item.trim();
     if (!templateId || seen.has(templateId)) {
       continue;
     }
     if (!registry.templatesById.has(templateId)) {
-      throw new Error(`Unknown template id: ${templateId}`);
+      continue; // skip unknown IDs silently — don't throw on hallucinated IDs
     }
 
     seen.add(templateId);
@@ -98,7 +108,7 @@ function validateFindings(
 
 function parseAndValidate(content: string, registry: LoadedTemplateRegistry) {
   const parsed = parseModelJson(content);
-  const validated = validateFindings(parsed, registry);
+  const validated = validateClassifications(parsed, registry);
   return { parsed, validated };
 }
 
@@ -169,8 +179,9 @@ export async function sendToOpenRouter(args: SendArgs): Promise<{
   } catch {
     const repairInstruction = [
       "Return strict JSON only.",
-      "Use exactly this schema: {\"findings\": [\"template.id\"]}.",
-      "findings must be an array of valid template IDs from the provided catalog.",
+      "Use exactly this schema: {\"classifications\": [{\"change\": 1, \"templateId\": \"category.template_id\"}]}.",
+      "Each entry maps a change number to a valid template ID from the provided catalog.",
+      "If no changes match, return: {\"classifications\": []}.",
       "Do not include any explanation or markdown."
     ].join("\n");
 

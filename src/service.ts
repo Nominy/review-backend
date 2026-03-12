@@ -1,6 +1,7 @@
 import { computeReviewMetrics } from "./metrics";
 import { buildPrompts } from "./prompt";
 import { sendToOpenRouter } from "./openrouter";
+import { runDeterministicRules } from "./deterministic-rules";
 import { config } from "./config";
 import { logReviewTextPair } from "./review-pair-logger";
 import { logReviewAnalytics } from "./analytics-logger";
@@ -129,15 +130,18 @@ export async function generateFeedback(input: {
   const prepared = buildPreparedPayload(input);
   const registry = getTemplateRegistry();
 
+  // Run deterministic rules (precision/recall thresholds) — these bypass the LLM
+  const deterministicFindings = runDeterministicRules(prepared.promptPacket);
+
   if (config.openRouterTestMode) {
     const result = buildLlmResult({
       reviewActionId: input.reviewActionId,
       prepared,
-      rawContent: JSON.stringify({ findings: [] }),
+      rawContent: JSON.stringify({ classifications: [] }),
       model: "test-mode",
       latencyMs: 0,
       receivedAt: new Date().toISOString(),
-      matchedTemplateIds: []
+      matchedTemplateIds: deterministicFindings
     });
 
     await safeLogAnalytics({
@@ -165,6 +169,16 @@ export async function generateFeedback(input: {
     registry
   });
 
+  // Merge deterministic + LLM findings, deduplicated
+  const seen = new Set<string>(deterministicFindings);
+  const mergedFindings = [...deterministicFindings];
+  for (const id of llmSelection.findings) {
+    if (!seen.has(id)) {
+      seen.add(id);
+      mergedFindings.push(id);
+    }
+  }
+
   const result = buildLlmResult({
     reviewActionId: input.reviewActionId,
     prepared,
@@ -172,7 +186,7 @@ export async function generateFeedback(input: {
     model: llmSelection.model,
     latencyMs: llmSelection.latencyMs,
     receivedAt: llmSelection.receivedAt,
-    matchedTemplateIds: llmSelection.findings,
+    matchedTemplateIds: mergedFindings,
     repaired: llmSelection.repaired
   });
 

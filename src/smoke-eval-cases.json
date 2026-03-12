@@ -1,9 +1,9 @@
 [
   {
     "id": "filler-commas",
-    "summary": "Real log pattern like 'ну, в общем': filler phrase needs comma isolation.",
-    "requiredFindings": ["punctuation_formatting.filler_commas"],
-    "allowedFindings": ["punctuation_formatting.punctuation_only"],
+    "summary": "Real log pattern like 'ну, в общем': filler/interjection needs comma isolation.",
+    "requiredFindings": ["punctuation_formatting.zapyatye_u_mezhdometiy"],
+    "allowedFindings": ["punctuation_formatting.lishnie_probely_formatirovanie"],
     "originalSegments": [
       {
         "id": "a1",
@@ -24,35 +24,32 @@
   {
     "id": "invalid-interjection",
     "summary": "Interjection normalized to an approved form from the interjections bank.",
-    "requiredFindings": ["word_accuracy.invalid_interjection"],
-    "allowedFindings": [
-      "word_accuracy.stretched_letters_instead_of_standard_form",
-      "word_accuracy.dictionary_spelling"
-    ],
+    "requiredFindings": ["word_accuracy.nestandartnye_mezhdometiya"],
+    "allowedFindings": ["word_accuracy.e_yo"],
     "originalSegments": [
       {
         "id": "b1",
-        "text": "Угуу.",
+        "text": "Угуу, я понял, спасибо.",
         "startTimeInSeconds": 4,
-        "endTimeInSeconds": 5
+        "endTimeInSeconds": 6.5
       }
     ],
     "currentSegments": [
       {
         "id": "b1",
-        "text": "Угу.",
+        "text": "Угу, я понял, спасибо.",
         "startTimeInSeconds": 4,
-        "endTimeInSeconds": 5
+        "endTimeInSeconds": 6.5
       }
     ]
   },
   {
-    "id": "iskazh-punctuation",
+    "id": "punctuation-inside-skaz",
     "summary": "Punctuation moved out of {ИСКАЖ:} so the tag only wraps the word form.",
-    "requiredFindings": ["tags_emphasis.skaz_iskazh_punctuation_outside"],
+    "requiredFindings": ["tags_emphasis.punktuatsiya_v_skaz"],
     "allowedFindings": [
-      "tags_emphasis.tag_only",
-      "punctuation_formatting.tag_adjacent_spacing"
+      "tags_emphasis.teg_iskazh_postavlen_neverno",
+      "punctuation_formatting.lishnie_probely_formatirovanie"
     ],
     "originalSegments": [
       {
@@ -72,79 +69,10 @@
     ]
   },
   {
-    "id": "timestamp-boundaries",
-    "summary": "Stable segments with material start/end boundary shifts and no wording changes.",
-    "requiredFindings": ["timestamp_accuracy.boundary_adjustment"],
-    "allowedFindings": [
-      "timestamp_accuracy.large_shift",
-      "timestamp_accuracy.inconsistent_boundary_tightness"
-    ],
-    "originalSegments": [
-      {
-        "id": "d1",
-        "text": "Да.",
-        "startTimeInSeconds": 1,
-        "endTimeInSeconds": 2
-      },
-      {
-        "id": "d2",
-        "text": "Конечно.",
-        "startTimeInSeconds": 3,
-        "endTimeInSeconds": 4
-      }
-    ],
-    "currentSegments": [
-      {
-        "id": "d1",
-        "text": "Да.",
-        "startTimeInSeconds": 0.75,
-        "endTimeInSeconds": 2.25
-      },
-      {
-        "id": "d2",
-        "text": "Конечно.",
-        "startTimeInSeconds": 3.2,
-        "endTimeInSeconds": 4.35
-      }
-    ]
-  },
-  {
-    "id": "segmentation-split",
-    "summary": "One natural utterance was split into two fragments, leaving extra unmatched current segments.",
-    "requiredFindings": ["segmentation.segment_count_increase"],
-    "allowedFindings": [
-      "segmentation.truncated_speech_segment",
-      "segmentation.mid_phrase_cut",
-      "segmentation.unnecessary_micro_segments"
-    ],
-    "originalSegments": [
-      {
-        "id": "e1",
-        "text": "Я хотел сказать что это важно.",
-        "startTimeInSeconds": 10,
-        "endTimeInSeconds": 14
-      }
-    ],
-    "currentSegments": [
-      {
-        "id": "e1a",
-        "text": "Я хотел сказать",
-        "startTimeInSeconds": 10,
-        "endTimeInSeconds": 11.9
-      },
-      {
-        "id": "e1b",
-        "text": "что это важно.",
-        "startTimeInSeconds": 11.95,
-        "endTimeInSeconds": 14
-      }
-    ]
-  },
-  {
     "id": "e-vs-yo",
-    "summary": "Classic е/ё normalization.",
-    "requiredFindings": ["word_accuracy.e_vs_yo"],
-    "allowedFindings": ["word_accuracy.dictionary_spelling"],
+    "summary": "Classic е/ё normalization where word meaning changes.",
+    "requiredFindings": ["word_accuracy.e_yo"],
+    "allowedFindings": [],
     "originalSegments": [
       {
         "id": "f1",
@@ -163,10 +91,10 @@
     ]
   },
   {
-    "id": "percent-spacing",
-    "summary": "Russian percent sign spacing fixed.",
-    "requiredFindings": ["punctuation_formatting.percent_spacing"],
-    "allowedFindings": ["punctuation_formatting.punctuation_only"],
+    "id": "extra-spaces",
+    "summary": "Russian percent sign spacing fixed — extra space before percent.",
+    "requiredFindings": ["punctuation_formatting.lishnie_probely_formatirovanie"],
+    "allowedFindings": [],
     "originalSegments": [
       {
         "id": "g1",
@@ -185,57 +113,10 @@
     ]
   },
   {
-    "id": "laughter-inline",
-    "summary": "Nonverbal laughter changed from standalone tag to in-speech style tag.",
-    "requiredFindings": ["tags_emphasis.laughter_in_speech_vs_standalone"],
-    "allowedFindings": ["tags_emphasis.tag_only"],
-    "originalSegments": [
-      {
-        "id": "h1",
-        "text": "[смех] Ну да.",
-        "startTimeInSeconds": 19,
-        "endTimeInSeconds": 20.8
-      }
-    ],
-    "currentSegments": [
-      {
-        "id": "h1",
-        "text": "<смех-в-речи>Ну</смех-в-речи> да.",
-        "startTimeInSeconds": 19,
-        "endTimeInSeconds": 20.8
-      }
-    ]
-  },
-  {
-    "id": "elongated-speech-overlap",
-    "summary": "Real rule overlap: stretched letters replaced with a style tag for prolonged speech.",
-    "requiredFindings": [
-      "tags_emphasis.elongated_speech_tag",
-      "word_accuracy.stretched_letters_instead_of_standard_form"
-    ],
-    "allowedFindings": ["tags_emphasis.tag_only"],
-    "originalSegments": [
-      {
-        "id": "i1",
-        "text": "Нууу, ладно.",
-        "startTimeInSeconds": 21,
-        "endTimeInSeconds": 22.9
-      }
-    ],
-    "currentSegments": [
-      {
-        "id": "i1",
-        "text": "<протяжная-речь>Ну</протяжная-речь>, ладно.",
-        "startTimeInSeconds": 21,
-        "endTimeInSeconds": 22.9
-      }
-    ]
-  },
-  {
-    "id": "skaz-number-rendering",
-    "summary": "Spoken number rendering fixed with a {СКАЗ:} annotation.",
-    "requiredFindings": ["tags_emphasis.skaz_number_rendering"],
-    "allowedFindings": ["tags_emphasis.number_rendering"],
+    "id": "missing-skaz-tag",
+    "summary": "Spoken number rendering needs a {СКАЗ:} annotation that was not added.",
+    "requiredFindings": ["tags_emphasis.propushchen_skaz"],
+    "allowedFindings": [],
     "originalSegments": [
       {
         "id": "j1",
@@ -254,34 +135,12 @@
     ]
   },
   {
-    "id": "continuation-ellipsis",
-    "summary": "Continuation marker added at the beginning of a resumed line.",
-    "requiredFindings": ["punctuation_formatting.continuation_ellipsis"],
-    "allowedFindings": ["punctuation_formatting.punctuation_only"],
-    "originalSegments": [
-      {
-        "id": "k1",
-        "text": "Да- да- да, закончу мысль.",
-        "startTimeInSeconds": 25,
-        "endTimeInSeconds": 26.8
-      }
-    ],
-    "currentSegments": [
-      {
-        "id": "k1",
-        "text": "...да- да- да, закончу мысль.",
-        "startTimeInSeconds": 25,
-        "endTimeInSeconds": 26.8
-      }
-    ]
-  },
-  {
     "id": "double-dash-interruption",
-    "summary": "Interrupted phrase normalized to project-standard double dash.",
-    "requiredFindings": ["punctuation_formatting.double_dash_interruption"],
+    "summary": "Speaker broke off mid-word but transcriber didn't place double dash.",
+    "requiredFindings": ["punctuation_formatting.obryv_slova_bez_dvoynogo_tire"],
     "allowedFindings": [
-      "punctuation_formatting.hyphen_dash_confusion",
-      "punctuation_formatting.punctuation_only"
+      "punctuation_formatting.dlinnoe_tire_vmesto",
+      "punctuation_formatting.lishnie_probely_formatirovanie"
     ],
     "originalSegments": [
       {
@@ -302,11 +161,10 @@
   },
   {
     "id": "segmentation-merge",
-    "summary": "Two neighboring segments were merged into one natural utterance.",
-    "requiredFindings": ["segmentation.segment_count_decrease"],
+    "summary": "Machine fragments of one sentence left without merging.",
+    "requiredFindings": ["segmentation.ne_obedineny_mashinnye_kuski"],
     "allowedFindings": [
-      "segmentation.missed_merge",
-      "segmentation.mid_phrase_cut"
+      "segmentation.registr_i_punktuatsiya_posle_obedineniya"
     ],
     "originalSegments": [
       {
@@ -332,89 +190,200 @@
     ]
   },
   {
-    "id": "mid-word-cut",
-    "summary": "A word was split across segment boundaries, creating an unnatural cut.",
-    "requiredFindings": [
-      "segmentation.segment_count_increase",
-      "segmentation.mid_word_cut"
-    ],
+    "id": "segmentation-break-formatting",
+    "summary": "Sentence broken at segment boundary without proper break markers.",
+    "requiredFindings": ["segmentation.ne_oformlen_razryv_predlozheniya"],
     "allowedFindings": [
-      "segmentation.truncated_speech_segment",
-      "segmentation.unnecessary_micro_segments"
+      "segmentation.ne_obedineny_mashinnye_kuski",
+      "punctuation_formatting.obryv_slova_bez_dvoynogo_tire"
     ],
     "originalSegments": [
       {
         "id": "n1",
-        "text": "Практически ничего.",
+        "text": "Практически ничего не осталось от этого проекта.",
         "startTimeInSeconds": 33,
-        "endTimeInSeconds": 35
+        "endTimeInSeconds": 36
       }
     ],
     "currentSegments": [
       {
         "id": "n1a",
-        "text": "Прак-",
+        "text": "Практически ничего не-",
         "startTimeInSeconds": 33,
-        "endTimeInSeconds": 33.5
+        "endTimeInSeconds": 34.2
       },
       {
         "id": "n1b",
-        "text": "тически ничего.",
-        "startTimeInSeconds": 33.55,
-        "endTimeInSeconds": 35
+        "text": "осталось от этого проекта.",
+        "startTimeInSeconds": 34.3,
+        "endTimeInSeconds": 36
       }
     ]
   },
   {
-    "id": "combined-punctuation-pass",
-    "summary": "Realistic combined punctuation cleanup: filler commas plus percent spacing in one edit.",
-    "requiredFindings": [
-      "punctuation_formatting.filler_commas",
-      "punctuation_formatting.percent_spacing"
-    ],
-    "allowedFindings": ["punctuation_formatting.punctuation_only"],
+    "id": "missing-period",
+    "summary": "Segment ends without terminal punctuation.",
+    "requiredFindings": ["punctuation_formatting.net_znaka_kontsa_segmenta"],
+    "allowedFindings": [],
     "originalSegments": [
       {
-        "id": "o1",
-        "text": "Ну в общем это 5% скидки",
-        "startTimeInSeconds": 36,
-        "endTimeInSeconds": 38
+        "id": "q1",
+        "text": "Хорошо, я все понял",
+        "startTimeInSeconds": 42,
+        "endTimeInSeconds": 44.5
       }
     ],
     "currentSegments": [
       {
-        "id": "o1",
-        "text": "Ну, в общем, это 5 % скидки.",
-        "startTimeInSeconds": 36,
-        "endTimeInSeconds": 38
+        "id": "q1",
+        "text": "Хорошо, я все понял.",
+        "startTimeInSeconds": 42,
+        "endTimeInSeconds": 44.5
       }
     ]
   },
   {
-    "id": "iskazh-and-filler-commas",
-    "summary": "Hard mixed case from real patterns: punctuation moved outside {ИСКАЖ:} and filler commas were also fixed.",
-    "requiredFindings": [
-      "tags_emphasis.skaz_iskazh_punctuation_outside",
-      "punctuation_formatting.filler_commas"
-    ],
+    "id": "stammer-formatting",
+    "summary": "Stammer formatted without space after hyphen.",
+    "requiredFindings": ["punctuation_formatting.nevernoe_oformlenie_stammera_s_defisom"],
     "allowedFindings": [
-      "punctuation_formatting.tag_adjacent_spacing",
-      "punctuation_formatting.punctuation_only"
+      "punctuation_formatting.bystrye_povtory"
     ],
     "originalSegments": [
       {
-        "id": "p1",
-        "text": "Я {ИСКАЖ: настока,} устал ну в общем.",
-        "startTimeInSeconds": 39,
-        "endTimeInSeconds": 41.5
+        "id": "r1",
+        "text": "Я по-по-понимаю.",
+        "startTimeInSeconds": 44,
+        "endTimeInSeconds": 45.8
       }
     ],
     "currentSegments": [
       {
-        "id": "p1",
-        "text": "Я {ИСКАЖ: настока}, устал, ну, в общем.",
-        "startTimeInSeconds": 39,
-        "endTimeInSeconds": 41.5
+        "id": "r1",
+        "text": "Я по- по- понимаю.",
+        "startTimeInSeconds": 44,
+        "endTimeInSeconds": 45.8
+      }
+    ]
+  },
+  {
+    "id": "missing-iskazh-tag",
+    "summary": "Word not in dictionary spoken incorrectly but transcribed without distortion tag.",
+    "requiredFindings": ["tags_emphasis.propushchen_teg_iskazh_u2014_slova_net_v_slovare"],
+    "allowedFindings": [
+      "tags_emphasis.teg_iskazh_postavlen_neverno",
+      "word_accuracy.netipichnoe_proiznoshenie_bez_iskazh"
+    ],
+    "originalSegments": [
+      {
+        "id": "s1",
+        "text": "Он сказал помахнатее.",
+        "startTimeInSeconds": 46,
+        "endTimeInSeconds": 48
+      }
+    ],
+    "currentSegments": [
+      {
+        "id": "s1",
+        "text": "Он сказал {ИСКАЖ: помахнатее}.",
+        "startTimeInSeconds": 46,
+        "endTimeInSeconds": 48
+      }
+    ]
+  },
+  {
+    "id": "long-dash-instead-of-double",
+    "summary": "Long dash (—) used where project standard double dash (--) is required.",
+    "requiredFindings": ["punctuation_formatting.dlinnoe_tire_vmesto"],
+    "allowedFindings": [
+      "punctuation_formatting.obryv_slova_bez_dvoynogo_tire"
+    ],
+    "originalSegments": [
+      {
+        "id": "t1",
+        "text": "Я хотел—",
+        "startTimeInSeconds": 49,
+        "endTimeInSeconds": 50.2
+      }
+    ],
+    "currentSegments": [
+      {
+        "id": "t1",
+        "text": "Я хотел--",
+        "startTimeInSeconds": 49,
+        "endTimeInSeconds": 50.2
+      }
+    ]
+  },
+  {
+    "id": "homophone-wrong-word",
+    "summary": "Word replaced by a similar sounding word with different meaning.",
+    "requiredFindings": ["word_accuracy.omofon_nevernoe_slovo"],
+    "allowedFindings": ["word_accuracy.ispravlenie_po_smyslu_u2014_realnoe_slovo"],
+    "originalSegments": [
+      {
+        "id": "u1",
+        "text": "Так же надо сделать.",
+        "startTimeInSeconds": 51,
+        "endTimeInSeconds": 53
+      }
+    ],
+    "currentSegments": [
+      {
+        "id": "u1",
+        "text": "Также надо сделать.",
+        "startTimeInSeconds": 51,
+        "endTimeInSeconds": 53
+      }
+    ]
+  },
+  {
+    "id": "confused-skaz-iskazh",
+    "summary": "{СКАЗ:} used where {ИСКАЖ:} should have been, or vice versa.",
+    "requiredFindings": ["tags_emphasis.pereputany_skaz_i_iskazh"],
+    "allowedFindings": [
+      "tags_emphasis.teg_iskazh_postavlen_neverno",
+      "tags_emphasis.propushchen_skaz"
+    ],
+    "originalSegments": [
+      {
+        "id": "v1",
+        "text": "Он сказал {СКАЗ: помахнатее}.",
+        "startTimeInSeconds": 54,
+        "endTimeInSeconds": 56
+      }
+    ],
+    "currentSegments": [
+      {
+        "id": "v1",
+        "text": "Он сказал {ИСКАЖ: помахнатее}.",
+        "startTimeInSeconds": 54,
+        "endTimeInSeconds": 56
+      }
+    ]
+  },
+  {
+    "id": "capital-after-merge",
+    "summary": "After merging segments mid-sentence, capital letter was left at the start.",
+    "requiredFindings": ["punctuation_formatting.zaglavnaya_bukva_posle_obedineniya"],
+    "allowedFindings": [
+      "segmentation.registr_i_punktuatsiya_posle_obedineniya",
+      "word_accuracy.bolshaya_bukva_v_nachale"
+    ],
+    "originalSegments": [
+      {
+        "id": "w1",
+        "text": "Я думаю, Что это правильно.",
+        "startTimeInSeconds": 57,
+        "endTimeInSeconds": 59.5
+      }
+    ],
+    "currentSegments": [
+      {
+        "id": "w1",
+        "text": "Я думаю, что это правильно.",
+        "startTimeInSeconds": 57,
+        "endTimeInSeconds": 59.5
       }
     ]
   }
