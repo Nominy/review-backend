@@ -19,12 +19,6 @@ function countWords(text: string): number {
   return normalizeWhitespace(text).split(/\s+/).filter(Boolean).length;
 }
 
-function clipText(text: string, maxLen: number): string {
-  const value = normalizeWhitespace(text);
-  if (value.length <= maxLen) return value;
-  return `${value.slice(0, maxLen)}...`;
-}
-
 function round(value: number, digits = 0): number {
   const factor = 10 ** digits;
   return Math.round((Number(value) || 0) * factor) / factor;
@@ -99,7 +93,7 @@ function isUsefulLocalChangedPair(input: {
 function toSegmentSample(annotation: Annotation): PromptSegmentSample {
   return {
     id: annotation.id,
-    text: clipText(annotation.content || "", 220),
+    text: annotation.content || "",
     startTimeInSeconds: round(annotation.startTimeInSeconds, 3),
     endTimeInSeconds: round(annotation.endTimeInSeconds, 3)
   };
@@ -165,10 +159,8 @@ function buildLocalChangedPairs(
     if (tagsChanged) localTagChangeCount += 1;
 
     changedPairs.push({
-      before: clipText(beforeText, 220),
-      after: clipText(afterText, 220),
-      ...(beforeText ? { fullBefore: beforeText } : {}),
-      ...(afterText ? { fullAfter: afterText } : {}),
+      before: beforeText,
+      after: afterText,
       beforeTagCount: beforeTags.length,
       afterTagCount: afterTags.length
     });
@@ -282,8 +274,8 @@ export function computeReviewMetrics(
       localTextChangeCount,
       localTagChangeCount,
       segmentCountDelta: newAnnotations.length - oldAnnotations.length,
-      previewBefore: clipText(oldText, 240),
-      previewAfter: clipText(newText, 240),
+      previewBefore: oldText,
+      previewAfter: newText,
       babelDiffUsed: !!babelDiffPacket
     }
   };
