@@ -11,7 +11,7 @@ import type { CategoryName, Change, ChangeType, PromptPacket } from "./types";
  *   TEXT         -> Word Accuracy, Punctuation & Formatting, Tags & Emphasis
  *   TIMESTAMP    -> Timestamp Accuracy
  *   SEGMENTATION -> Segmentation
- *   WORD_DIFF    -> Word Accuracy
+ *   WORD_DIFF    -> legacy only; excluded from new extraction
  *   TAG          -> Tags & Emphasis
  */
 
@@ -19,7 +19,7 @@ export const CHANGE_TYPE_CATEGORIES: Record<ChangeType, CategoryName[]> = {
   TEXT: ["Word Accuracy", "Punctuation & Formatting", "Tags & Emphasis"],
   TIMESTAMP: ["Timestamp Accuracy"],
   SEGMENTATION: ["Segmentation"],
-  WORD_DIFF: ["Word Accuracy"],
+  WORD_DIFF: [],
   TAG: ["Tags & Emphasis"]
 };
 
@@ -90,16 +90,6 @@ function summarizeSegmentationChange(sample: {
   hypothesisSegmentCount: number;
 }): string {
   return `${sample.relationship} (${sample.referenceSegmentCount} ref, ${sample.hypothesisSegmentCount} hyp, ${sample.structuralSeverity})`;
-}
-
-function summarizeWordDiff(changedTokens: Array<{ value: string; status: string }>): string {
-  const edits = changedTokens.filter((token) => token.status !== "equal");
-  if (!edits.length) {
-    return "Word difference detected";
-  }
-
-  const uniqueStatuses = [...new Set(edits.map((token) => token.status))].join(", ");
-  return `Word difference detected (${edits.length} edit${edits.length === 1 ? "" : "s"}: ${uniqueStatuses})`;
 }
 
 function extractTextChanges(packet: PromptPacket): Change[] {
@@ -221,48 +211,11 @@ function extractSegmentationChanges(packet: PromptPacket): Change[] {
   return changes;
 }
 
-function extractWordDiffChanges(packet: PromptPacket): Change[] {
-  const changes: Change[] = [];
-  const wa = packet.babelDiff?.wordAccuracy;
-  if (!wa) return changes;
-
-  for (const sample of wa.wordDiffSamples) {
-    const edits: string[] = [];
-    for (const token of sample.changedTokens) {
-      if (token.status === "equal") continue;
-      edits.push(`${token.status}: "${escapeQuotes(token.value)}"`);
-    }
-
-    if (edits.length === 0) continue;
-
-    const editSummary = edits.slice(0, 6).join("; ");
-    const overflow = edits.length > 6 ? ` (+${edits.length - 6} more)` : "";
-    const desc = `Word diff: ${editSummary}${overflow}`;
-
-    changes.push({
-      index: 0,
-      type: "WORD_DIFF",
-      categories: CHANGE_TYPE_CATEGORIES.WORD_DIFF,
-      summary: summarizeWordDiff(sample.changedTokens),
-      evidence: desc,
-      evidenceDetail: {
-        kind: "text-diff",
-        before: sample.referenceText,
-        after: sample.hypothesisText
-      },
-      description: desc
-    });
-  }
-
-  return changes;
-}
-
 export function extractChanges(packet: PromptPacket): Change[] {
   const all: Change[] = [
     ...extractTextChanges(packet),
     ...extractTimestampChanges(packet),
-    ...extractSegmentationChanges(packet),
-    ...extractWordDiffChanges(packet)
+    ...extractSegmentationChanges(packet)
   ];
 
   for (let i = 0; i < all.length; i++) {

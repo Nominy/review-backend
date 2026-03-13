@@ -10,7 +10,7 @@ import { buildBabelDiffPromptPacket } from "./babel-diff";
 import { alignSegments, diffWords } from "./text-diff";
 
 export const METRICS_VERSION = "v6";
-export const PROMPT_VERSION = "v12";
+export const PROMPT_VERSION = "v13";
 
 function normalizeWhitespace(text: string): string {
   return String(text || "").replace(/\s+/g, " ").trim();
