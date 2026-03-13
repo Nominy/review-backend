@@ -40,6 +40,8 @@ Notes:
 - `OPENROUTER_TEST_MODE` is optional (`false` by default). Set `true` to skip OpenRouter and return deterministic default template-backed feedback.
 - `REVIEW_PAIR_LOG_PATH` is optional (defaults to `logs/review-text-pairs.jsonl`).
 - `ANALYTICS_LOG_PATH` is optional (defaults to `logs/review-analytics.jsonl`).
+- `REVIEW_SESSIONS_DIR` is optional (defaults to `data/review-sessions`).
+- `PENDING_TEMPLATE_PROPOSAL_PATH` is optional (defaults to `data/prompt-lab/pending-template-proposals.json`).
 - `HOST` is optional (defaults to `127.0.0.1`).
 - `PORT` is optional (defaults to `3001`).
 - `PUBLIC_BASE_URL` is optional (for logs/visibility; defaults to `http://<HOST>:<PORT>`).
@@ -57,7 +59,7 @@ Each `POST /api/review/generate` call appends one JSON line with:
 - `loggedAt`, `originalCapturedAt`, `currentCapturedAt`
 
 Each analytics event appends one JSON line to `ANALYTICS_LOG_PATH` with:
-- event type (`review_generate` or `submit_transcript_review_action`)
+- event type (`review_generate`, `submit_transcript_review_action`, and the interactive-session lifecycle events)
 - full `original` and `current` normalized states
 - extracted `originalText` and `currentText`
 - computed metrics (`stats` + `featurePacket`)
@@ -95,6 +97,8 @@ It is disabled unless both `TEMPLATES_LAB_USERNAME` and `TEMPLATES_LAB_PASSWORD`
 
 The UI now stages create/edit/delete/CSV-import changes locally. Nothing is written to `templates/*.json` until the user clicks `Save Draft`.
 
+Approved reviewer proposals are stored separately in `PENDING_TEMPLATE_PROPOSAL_PATH`. Templates Lab now shows that pending queue and can copy queued items into the local draft without mutating the live registry files first.
+
 CSV export from the UI downloads the current draft as a 4-column file:
 
 ```csv
@@ -121,6 +125,12 @@ Rules:
 - `GET /health`
 - `POST /api/review/prepare`
 - `POST /api/review/generate`
+- `POST /api/review/sessions`
+- `GET /api/review/sessions/:sessionId`
+- `POST /api/review/sessions/:sessionId/comments`
+- `POST /api/review/sessions/:sessionId/template-suggestions`
+- `POST /api/review/sessions/:sessionId/template-suggestions/:proposalId/decision`
+- `POST /api/review/sessions/:sessionId/finalize`
 - `GET /api/review-history`
 - `GET /api/review-history/:historyId`
 - `POST /api/trpc/transcriptions.submitTranscriptReviewAction`
@@ -140,7 +150,7 @@ If those env vars are not set, the history API returns `404`.
 - `limit` default `50`, capped at `200`
 - `reviewActionId` optional substring filter
 - `query` optional free-text filter over action id, original/current text, and matched template ids
-- `eventType` optional: `review_generate` or `submit_transcript_review_action`
+- `eventType` optional: any logged review analytics event type, including the interactive-session events
 
 `GET /api/review-history/:historyId` returns:
 - stored `original` / `current` states
@@ -176,6 +186,76 @@ The prepared payload is now intentionally lean:
 }
 ```
 
+Returns:
+
+```json
+{
+  "prepared": {},
+  "llm": {
+    "feedback": [],
+    "matchedTemplateIds": [],
+    "classifications": []
+  }
+}
+```
+
+## `POST /api/review/sessions` body
+
+```json
+{
+  "reviewActionId": "uuid",
+  "original": {},
+  "current": {},
+  "babelDiff": {}
+}
+```
+
+Returns a persisted interactive session payload with:
+- `sessionId`
+- `reviewActionId`
+- `prepared`
+- `changes`
+- `cards`
+- `categoryFeedback`
+- `comments`
+- `suggestions`
+- `aiReview`
+
+## `POST /api/review/sessions/:sessionId/comments` body
+
+```json
+{
+  "sessionComment": "optional text",
+  "cardComments": {
+    "change-1": "specific reviewer note"
+  }
+}
+```
+
+## `POST /api/review/sessions/:sessionId/template-suggestions`
+
+Uses only explicit saved reviewer comments from the session and returns the updated session with `suggestions`.
+
+## `POST /api/review/sessions/:sessionId/template-suggestions/:proposalId/decision` body
+
+```json
+{
+  "decision": "approved"
+}
+```
+
+Approving a suggestion appends it to the pending proposal queue; it does not mutate `templates/*.json`.
+
+## `POST /api/review/sessions/:sessionId/finalize` body
+
+```json
+{
+  "mode": "apply"
+}
+```
+
+Returns the final category feedback payload used by the extension to apply notes into the Babel page.
+
 ## `POST /api/trpc/transcriptions.submitTranscriptReviewAction` body
 
 ```json
@@ -197,16 +277,5 @@ Returns:
   "savedAt": "2026-02-24T00:00:00.000Z",
   "reviewActionId": "uuid",
   "prepared": {}
-}
-```
-
-Returns:
-
-```json
-{
-  "prepared": {},
-  "llm": {
-    "feedback": []
-  }
 }
 ```

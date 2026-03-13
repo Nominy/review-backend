@@ -241,6 +241,8 @@ export type ClassificationResponse = {
   }>;
 };
 
+export type ReviewClassification = ClassificationResponse["classifications"][number];
+
 export type PreparedPayload = {
   preparedAt: string;
   stats: Record<string, unknown>;
@@ -264,10 +266,110 @@ export type GenerateResponse = {
     latencyMs: number;
     receivedAt: string;
     matchedTemplateIds: string[];
+    classifications: ReviewClassification[];
     templateRegistryVersion: string;
     repaired?: boolean;
   };
 };
+
+export type ReviewSessionCard = {
+  id: string;
+  changeIndex: number;
+  type: ChangeType;
+  description: string;
+  categories: CategoryName[];
+  matchedTemplateId: string | null;
+  templateTitle: string | null;
+  templateDescription: string | null;
+  opinionText: string;
+  rationale: string;
+};
+
+export type TemplateSuggestionOperation =
+  | "create_template"
+  | "update_template"
+  | "disable_template";
+
+export type TemplateSuggestionDecision = "pending" | "approved" | "rejected";
+
+export type TemplateSuggestionProposal = {
+  proposalId: string;
+  operation: TemplateSuggestionOperation;
+  category: CategoryName;
+  targetTemplateId?: string;
+  title: string;
+  description: string;
+  reportTexts: string[];
+  reason: string;
+  sourceCardIds: string[];
+  decision: TemplateSuggestionDecision;
+  decidedAt?: string;
+};
+
+export type ReviewSessionComments = {
+  sessionComment: string;
+  cardComments: Record<string, string>;
+};
+
+export type ReviewSessionRecord = {
+  sessionId: string;
+  createdAt: string;
+  updatedAt: string;
+  reviewActionId: string;
+  original: NormalizedState;
+  current: NormalizedState;
+  babelDiff?: BabelDiffPayload | null;
+  prepared: PreparedPayload;
+  changes: Change[];
+  cards: ReviewSessionCard[];
+  categoryFeedback: FeedbackItem[];
+  matchedTemplateIds: string[];
+  classifications: ReviewClassification[];
+  comments: ReviewSessionComments;
+  proposals: TemplateSuggestionProposal[];
+};
+
+export type CreateReviewSessionResponse = {
+  sessionId: string;
+  reviewActionId: string;
+  prepared: PreparedPayload;
+  changes: Change[];
+  cards: ReviewSessionCard[];
+  categoryFeedback: FeedbackItem[];
+  comments: ReviewSessionComments;
+  suggestions: TemplateSuggestionProposal[];
+  proposals: TemplateSuggestionProposal[];
+  aiReview: GenerateResponse["llm"];
+};
+
+export type FinalizeReviewSessionResponse = {
+  sessionId: string;
+  reviewActionId: string;
+  categoryFeedback: FeedbackItem[];
+  appliedAt: string;
+  mode: "skip" | "apply";
+  aiReview: GenerateResponse["llm"] | null;
+};
+
+export type PendingTemplateProposalQueueItem = {
+  queueId: string;
+  approvedAt: string;
+  sessionId: string;
+  reviewActionId: string;
+  proposal: TemplateSuggestionProposal;
+};
+
+export type AnalyticsEventType =
+  | "review_generate"
+  | "submit_transcript_review_action"
+  | "review_session_created"
+  | "review_session_opened"
+  | "review_card_commented"
+  | "template_suggestions_generated"
+  | "template_suggestion_approved"
+  | "template_suggestion_rejected"
+  | "interactive_session_skipped"
+  | "interactive_review_applied";
 
 export type SubmitTranscriptReviewAnalyticsResponse = {
   ok: true;

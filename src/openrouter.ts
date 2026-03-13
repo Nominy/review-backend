@@ -1,5 +1,5 @@
 import type { LoadedTemplateRegistry } from "./template-registry";
-import type { TemplateSelectionResponse } from "./types";
+import type { ReviewClassification, TemplateSelectionResponse } from "./types";
 
 type SendArgs = {
   apiKey: string;
@@ -9,6 +9,11 @@ type SendArgs = {
     userPrompt: string;
   };
   registry: LoadedTemplateRegistry;
+};
+
+type OpenRouterMessage = {
+  role: string;
+  content: string;
 };
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -40,7 +45,7 @@ function normalizeContent(content: unknown): string {
   return typeof content === "undefined" ? "" : JSON.stringify(content);
 }
 
-function parseModelJson(text: string): unknown {
+export function parseModelJson(text: string): unknown {
   const direct = parseMaybeJson(text);
   if (direct) return direct;
 
@@ -63,47 +68,58 @@ function parseModelJson(text: string): unknown {
 function validateClassifications(
   payload: unknown,
   registry: LoadedTemplateRegistry
-): TemplateSelectionResponse {
+): TemplateSelectionResponse & { classifications: ReviewClassification[] } {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new Error("Model output must be an object.");
   }
 
   const record = payload as Record<string, unknown>;
-
-  // Accept both new schema {"classifications": [...]} and legacy {"findings": [...]}
   const rawClassifications = record.classifications ?? record.findings;
   if (!Array.isArray(rawClassifications)) {
     throw new Error("Model output must contain a classifications (or findings) array.");
   }
 
-  const seen = new Set<string>();
   const findings: string[] = [];
+  const seenFindings = new Set<string>();
+  const classifications: ReviewClassification[] = [];
+  const seenChanges = new Set<number>();
 
   for (const item of rawClassifications) {
-    let templateId: string;
-
     if (typeof item === "string") {
-      // Legacy format: plain string template ID
-      templateId = item.trim();
-    } else if (item && typeof item === "object" && "templateId" in item) {
-      // New format: {"change": N, "templateId": "..."}
-      templateId = String((item as Record<string, unknown>).templateId).trim();
-    } else {
-      continue; // skip malformed entries instead of throwing
-    }
-
-    if (!templateId || seen.has(templateId)) {
+      const templateId = item.trim();
+      if (!templateId || seenFindings.has(templateId) || !registry.templatesById.has(templateId)) {
+        continue;
+      }
+      seenFindings.add(templateId);
+      findings.push(templateId);
       continue;
     }
-    if (!registry.templatesById.has(templateId)) {
-      continue; // skip unknown IDs silently — don't throw on hallucinated IDs
+
+    if (!item || typeof item !== "object" || !("templateId" in item)) {
+      continue;
     }
 
-    seen.add(templateId);
-    findings.push(templateId);
+    const templateId = String((item as Record<string, unknown>).templateId || "").trim();
+    const change = Number((item as Record<string, unknown>).change);
+    if (!templateId || !registry.templatesById.has(templateId)) {
+      continue;
+    }
+
+    if (!seenFindings.has(templateId)) {
+      seenFindings.add(templateId);
+      findings.push(templateId);
+    }
+
+    if (!Number.isInteger(change) || change <= 0 || seenChanges.has(change)) {
+      continue;
+    }
+
+    seenChanges.add(change);
+    classifications.push({ change, templateId });
   }
 
-  return { findings };
+  classifications.sort((left, right) => left.change - right.change);
+  return { findings, classifications };
 }
 
 function parseAndValidate(content: string, registry: LoadedTemplateRegistry) {
@@ -112,17 +128,22 @@ function parseAndValidate(content: string, registry: LoadedTemplateRegistry) {
   return { parsed, validated };
 }
 
-async function requestOnce(args: SendArgs, messages: Array<{ role: string; content: string }>): Promise<string> {
+export async function requestOpenRouter(
+  apiKey: string,
+  model: string,
+  messages: OpenRouterMessage[],
+  temperature = 0.2
+): Promise<string> {
   const response = await fetch(OPENROUTER_URL, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${args.apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
       "X-Title": "Babel Review Assistant"
     },
     body: JSON.stringify({
-      model: args.model,
-      temperature: 0.2,
+      model,
+      temperature,
       stream: false,
       response_format: { type: "json_object" },
       provider: {
@@ -153,6 +174,7 @@ async function requestOnce(args: SendArgs, messages: Array<{ role: string; conte
 
 export async function sendToOpenRouter(args: SendArgs): Promise<{
   findings: string[];
+  classifications: ReviewClassification[];
   rawContent: string;
   model: string;
   latencyMs: number;
@@ -160,17 +182,18 @@ export async function sendToOpenRouter(args: SendArgs): Promise<{
   repaired?: boolean;
 }> {
   const startedAt = Date.now();
-  const baseMessages = [
+  const baseMessages: OpenRouterMessage[] = [
     { role: "system", content: args.prompts.systemPrompt },
     { role: "user", content: args.prompts.userPrompt }
   ];
 
-  const firstContent = await requestOnce(args, baseMessages);
+  const firstContent = await requestOpenRouter(args.apiKey, args.model, baseMessages);
 
   try {
     const { validated } = parseAndValidate(firstContent, args.registry);
     return {
       findings: validated.findings,
+      classifications: validated.classifications,
       rawContent: firstContent,
       model: args.model,
       latencyMs: Date.now() - startedAt,
@@ -185,7 +208,7 @@ export async function sendToOpenRouter(args: SendArgs): Promise<{
       "Do not include any explanation or markdown."
     ].join("\n");
 
-    const repairedContent = await requestOnce(args, [
+    const repairedContent = await requestOpenRouter(args.apiKey, args.model, [
       ...baseMessages,
       { role: "assistant", content: firstContent },
       { role: "user", content: repairInstruction }
@@ -194,6 +217,7 @@ export async function sendToOpenRouter(args: SendArgs): Promise<{
 
     return {
       findings: validated.findings,
+      classifications: validated.classifications,
       rawContent: repairedContent,
       model: args.model,
       latencyMs: Date.now() - startedAt,

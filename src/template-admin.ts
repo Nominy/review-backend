@@ -7,6 +7,8 @@ import {
   validateTemplateId,
   validateTemplateRegistryFileData
 } from "./template-registry";
+import { config } from "./config";
+import { listPendingTemplateProposals } from "./pending-template-proposals";
 import type { CategoryName, TemplateDefinition, TemplateRegistryFile } from "./types";
 
 type TemplateFileWithMeta = TemplateRegistryFile & {
@@ -361,7 +363,7 @@ function cloneTemplateFiles(): TemplateFileWithMeta[] {
   }));
 }
 
-export function listTemplatesLabData(): {
+export async function listTemplatesLabData(): Promise<{
   ok: true;
   registryVersion: string;
   categories: Array<{
@@ -370,8 +372,10 @@ export function listTemplatesLabData(): {
     defaultText: string;
     templates: TemplateDefinition[];
   }>;
-} {
+  pendingSuggestions: Awaited<ReturnType<typeof listPendingTemplateProposals>>;
+}> {
   const files = normalizeTemplateFiles(readTemplateRegistryFiles());
+  const pendingSuggestions = await listPendingTemplateProposals(config.pendingTemplateProposalPath);
   return {
     ok: true,
     registryVersion: getTemplateRegistry().registryVersion,
@@ -380,9 +384,10 @@ export function listTemplatesLabData(): {
       .map((file) => ({
         category: file.category,
         fileVersion: file.version,
-        defaultText: file.defaultText,
-        templates: [...file.templates].sort(sortTemplates)
-      }))
+          defaultText: file.defaultText,
+          templates: [...file.templates].sort(sortTemplates)
+        })),
+    pendingSuggestions
   };
 }
 

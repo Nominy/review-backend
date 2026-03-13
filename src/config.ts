@@ -46,6 +46,11 @@ export const config = {
   openRouterModel: optionalEnv("OPENROUTER_MODEL", "openai/gpt-oss-120b"),
   reviewPairLogPath: optionalEnv("REVIEW_PAIR_LOG_PATH", "logs/review-text-pairs.jsonl"),
   analyticsLogPath: optionalEnv("ANALYTICS_LOG_PATH", "logs/review-analytics.jsonl"),
+  reviewSessionsDir: optionalEnv("REVIEW_SESSIONS_DIR", "data/review-sessions"),
+  pendingTemplateProposalPath: optionalEnv(
+    "PENDING_TEMPLATE_PROPOSAL_PATH",
+    "data/prompt-lab/pending-template-proposals.json"
+  ),
   publicBaseUrl: optionalEnv("PUBLIC_BASE_URL", defaultPublicBaseUrl),
   corsOrigin: parseCorsOriginEnv("CORS_ALLOWED_ORIGINS"),
   templatesLabUsername: optionalEnv("TEMPLATES_LAB_USERNAME", ""),

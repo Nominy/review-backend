@@ -1,9 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { buildPreparedPayload } from "./service";
-import type { BabelDiffPayload, NormalizedState } from "./types";
-
-type AnalyticsEventType = "review_generate" | "submit_transcript_review_action";
+import type { AnalyticsEventType, BabelDiffPayload, NormalizedState } from "./types";
 
 type HistoryMetricsAnalysis = {
   stats?: Record<string, unknown>;
@@ -77,7 +75,22 @@ function isNormalizedState(value: unknown): value is NormalizedState {
 }
 
 function toEventType(value: unknown): AnalyticsEventType | null {
-  return value === "review_generate" || value === "submit_transcript_review_action" ? value : null;
+  const normalized = typeof value === "string" ? value : "";
+  switch (normalized) {
+    case "review_generate":
+    case "submit_transcript_review_action":
+    case "review_session_created":
+    case "review_session_opened":
+    case "review_card_commented":
+    case "template_suggestions_generated":
+    case "template_suggestion_approved":
+    case "template_suggestion_rejected":
+    case "interactive_session_skipped":
+    case "interactive_review_applied":
+      return normalized;
+    default:
+      return null;
+  }
 }
 
 function toStringArray(value: unknown): string[] {

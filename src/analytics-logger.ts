@@ -1,8 +1,6 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { BabelDiffPayload, NormalizedState, PreparedPayload } from "./types";
-
-type AnalyticsEventType = "review_generate" | "submit_transcript_review_action";
+import type { AnalyticsEventType, BabelDiffPayload, NormalizedState, PreparedPayload } from "./types";
 
 type ReviewAnalyticsLogEntry = {
   loggedAt: string;

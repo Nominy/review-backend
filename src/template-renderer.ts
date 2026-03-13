@@ -32,7 +32,7 @@ function hash32(input: string): number {
   return hash >>> 0;
 }
 
-function pickTemplateVariant(template: ReviewTemplate, reviewActionId: string): string {
+export function pickTemplateVariant(template: ReviewTemplate, reviewActionId: string): string {
   const variants = template.reportTexts.map((item) => item.trim()).filter(Boolean);
   if (!variants.length) {
     return "";
@@ -44,6 +44,13 @@ function pickTemplateVariant(template: ReviewTemplate, reviewActionId: string): 
   const seed = `${reviewActionId}:${template.id}`;
   const index = hash32(seed) % variants.length;
   return variants[index];
+}
+
+export function renderTemplateOpinionText(
+  template: ReviewTemplate,
+  reviewActionId: string
+): string {
+  return clipNote(pickTemplateVariant(template, reviewActionId));
 }
 
 export function renderFeedbackFromTemplateMatches(

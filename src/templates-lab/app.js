@@ -3,6 +3,7 @@
 
   const state = {
     categories: [],
+    pendingSuggestions: [],
     selectedId: null,
     dirty: false
   };
@@ -63,6 +64,7 @@
     importBtn: document.getElementById("importBtn"),
     exportBtn: document.getElementById("exportBtn"),
     templateList: document.getElementById("templateList"),
+    pendingSuggestions: document.getElementById("pendingSuggestions"),
     categoryFilter: document.getElementById("categoryFilter"),
     searchInput: document.getElementById("searchInput"),
     newTemplateBtn: document.getElementById("newTemplateBtn"),
@@ -398,6 +400,40 @@
           "</article>"
         ].join("");
       })
+        .join("");
+  }
+
+  function renderPendingSuggestions() {
+    if (!Array.isArray(state.pendingSuggestions) || !state.pendingSuggestions.length) {
+      els.pendingSuggestions.innerHTML =
+        '<div class="empty-state">No approved reviewer suggestions are waiting in the queue.</div>';
+      return;
+    }
+
+    els.pendingSuggestions.innerHTML = state.pendingSuggestions
+      .map((item) => {
+        const proposal = item.proposal || {};
+        const reportTexts = Array.isArray(proposal.reportTexts) ? proposal.reportTexts : [];
+        const preview = reportTexts.slice(0, 2).join(" | ");
+        return [
+          '<article class="pending-item" data-queue-id="' + escapeHtml(item.queueId) + '">',
+          '<div class="pending-item-head">',
+          '<div>',
+          '<div class="pending-item-title">' + escapeHtml(proposal.title || item.queueId) + "</div>",
+          '<div class="pending-item-meta">' +
+            escapeHtml((proposal.category || "Unknown") + " | " + (proposal.operation || "pending")) +
+            "</div>",
+          "</div>",
+          '<button type="button" class="secondary pending-apply-btn">Apply To Draft</button>',
+          "</div>",
+          '<div class="pending-item-desc">' + escapeHtml(proposal.description || "") + "</div>",
+          '<div class="pending-item-reason">' + escapeHtml(proposal.reason || "") + "</div>",
+          (preview
+            ? '<div class="pending-item-reason"><strong>Texts:</strong> ' + escapeHtml(preview) + "</div>"
+            : ""),
+          "</article>"
+        ].join("");
+      })
       .join("");
   }
 
@@ -432,13 +468,17 @@
       }
     }
 
-    setStatus("Loading templates...", false);
-    const payload = await request("/api/templates-lab/templates");
-    state.categories = cloneCategories(payload.categories);
-    sortDraftTemplates();
-    els.registryVersion.textContent = payload.registryVersion || "-";
-    renderCategoryOptions();
-    clearDirty();
+      setStatus("Loading templates...", false);
+      const payload = await request("/api/templates-lab/templates");
+      state.categories = cloneCategories(payload.categories);
+      state.pendingSuggestions = Array.isArray(payload.pendingSuggestions)
+        ? payload.pendingSuggestions
+        : [];
+      sortDraftTemplates();
+      els.registryVersion.textContent = payload.registryVersion || "-";
+      renderCategoryOptions();
+      renderPendingSuggestions();
+      clearDirty();
     if (state.selectedId) {
       const selected = getTemplateById(state.selectedId);
       if (selected) {
@@ -469,7 +509,63 @@
     return Math.min.apply(
       Math,
       group.templates.map((template) => Number(template.priority))
-    ) - 1;
+      ) - 1;
+  }
+
+  function applyPendingSuggestionToDraft(queueId) {
+    const item = (Array.isArray(state.pendingSuggestions) ? state.pendingSuggestions : []).find(
+      (entry) => entry && entry.queueId === queueId
+    );
+    if (!item || !item.proposal) {
+      throw new Error("Pending suggestion not found: " + queueId);
+    }
+
+    const proposal = item.proposal;
+    const category = proposal.category;
+    const group = state.categories.find((entry) => entry.category === category);
+    if (!group) {
+      throw new Error("Unknown category for pending suggestion: " + category);
+    }
+
+    if (proposal.operation === "create_template") {
+      let id = String(proposal.targetTemplateId || "").trim();
+      if (!id) {
+        const prefix = categoryPrefixes[category];
+        const slug = slugifyName(proposal.title || proposal.description || queueId);
+        id = prefix + "." + slug;
+      }
+      if (getTemplateById(id)) {
+        throw new Error("Draft already contains template " + id + ".");
+      }
+
+      group.templates.push({
+        id: id,
+        title: proposal.title,
+        description: proposal.description,
+        reportTexts: Array.isArray(proposal.reportTexts) ? proposal.reportTexts.slice() : [],
+        priority: getNextPriority(group),
+        enabled: true
+      });
+    } else {
+      const found = proposal.targetTemplateId ? getTemplateById(proposal.targetTemplateId) : null;
+      if (!found) {
+        throw new Error("Target template not found in draft: " + proposal.targetTemplateId);
+      }
+
+      found.template.title = proposal.title;
+      found.template.description = proposal.description;
+      found.template.reportTexts = Array.isArray(proposal.reportTexts)
+        ? proposal.reportTexts.slice()
+        : [];
+      if (proposal.operation === "disable_template") {
+        found.template.enabled = false;
+      }
+    }
+
+    sortDraftTemplates();
+    markDirty();
+    renderList();
+    setStatus("Applied pending suggestion " + queueId + " into the draft.", false);
   }
 
   function assertNonEmpty(value, field) {
@@ -952,6 +1048,24 @@
     }
   }
 
+  function onPendingSuggestionsClick(event) {
+    const button = event.target.closest(".pending-apply-btn");
+    if (!button) {
+      return;
+    }
+    const card = button.closest(".pending-item");
+    const queueId = card && card.getAttribute("data-queue-id");
+    if (!queueId) {
+      return;
+    }
+
+    try {
+      applyPendingSuggestionToDraft(queueId);
+    } catch (error) {
+      handleError(error);
+    }
+  }
+
   function onVariantListClick(event) {
     const button = event.target.closest(".variant-remove");
     if (!button) {
@@ -1036,6 +1150,7 @@
   els.createReportTexts.addEventListener("click", onVariantListClick);
   els.editReportTexts.addEventListener("click", onVariantListClick);
   els.templateList.addEventListener("click", onListClick);
+  els.pendingSuggestions.addEventListener("click", onPendingSuggestionsClick);
 
   updateDraftControls();
   resetCreateForm();
