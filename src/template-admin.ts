@@ -9,7 +9,12 @@ import {
 } from "./template-registry";
 import { config } from "./config";
 import { listPendingTemplateProposals } from "./pending-template-proposals";
-import type { CategoryName, TemplateDefinition, TemplateRegistryFile } from "./types";
+import type {
+  CategoryName,
+  PendingTemplateProposalQueueItem,
+  TemplateDefinition,
+  TemplateRegistryFile
+} from "./types";
 
 type TemplateFileWithMeta = TemplateRegistryFile & {
   fileName: string;
@@ -363,6 +368,99 @@ function cloneTemplateFiles(): TemplateFileWithMeta[] {
   }));
 }
 
+function findTemplateById(
+  files: TemplateFileWithMeta[],
+  templateId: string
+): { file: TemplateFileWithMeta; template: TemplateDefinition } | null {
+  for (const file of files) {
+    const template = file.templates.find((item) => item.id === templateId);
+    if (template) {
+      return { file, template };
+    }
+  }
+  return null;
+}
+
+function buildPendingDraftTemplateId(
+  item: PendingTemplateProposalQueueItem,
+  category: CategoryName
+): string {
+  const targetTemplateId = String(item.proposal.targetTemplateId || "").trim();
+  if (targetTemplateId) {
+    return targetTemplateId;
+  }
+
+  const slug = slugifyName(item.proposal.title || item.proposal.description || item.queueId);
+  if (!slug) {
+    return buildTemplateId(category, item.queueId);
+  }
+  return validateTemplateId(
+    `${CATEGORY_PREFIXES[category]}.${slug}`,
+    "pending template suggestion id"
+  );
+}
+
+function applyPendingSuggestionToDraftFiles(
+  files: TemplateFileWithMeta[],
+  item: PendingTemplateProposalQueueItem
+): void {
+  const proposal = item.proposal;
+  const category = proposal.category;
+  const reportTexts = Array.isArray(proposal.reportTexts)
+    ? proposal.reportTexts.map((text) => String(text || "").trim()).filter(Boolean)
+    : [];
+
+  if (proposal.operation === "create_template") {
+    const file = findFileByCategory(files, category);
+    const templateId = buildPendingDraftTemplateId(item, category);
+    const existing = file.templates.find((template) => template.id === templateId);
+
+    if (existing) {
+      existing.title = proposal.title || existing.title;
+      existing.description = proposal.description || existing.description;
+      if (reportTexts.length) {
+        existing.reportTexts = reportTexts;
+      }
+      existing.enabled = true;
+      return;
+    }
+
+    file.templates.push({
+      id: templateId,
+      title: proposal.title,
+      description: proposal.description,
+      reportTexts,
+      priority: getNextPriority(file),
+      enabled: true
+    });
+    return;
+  }
+
+  const found = proposal.targetTemplateId ? findTemplateById(files, proposal.targetTemplateId) : null;
+  if (!found) {
+    return;
+  }
+
+  found.template.title = proposal.title || found.template.title;
+  found.template.description = proposal.description || found.template.description;
+  if (reportTexts.length) {
+    found.template.reportTexts = reportTexts;
+  }
+  if (proposal.operation === "disable_template") {
+    found.template.enabled = false;
+  }
+}
+
+function applyPendingSuggestionsToDraftFiles(
+  files: TemplateFileWithMeta[],
+  pendingSuggestions: PendingTemplateProposalQueueItem[]
+): TemplateFileWithMeta[] {
+  for (const item of pendingSuggestions) {
+    applyPendingSuggestionToDraftFiles(files, item);
+  }
+  return files;
+}
+
 export async function listTemplatesLabData(): Promise<{
   ok: true;
   registryVersion: string;
@@ -374,12 +472,13 @@ export async function listTemplatesLabData(): Promise<{
   }>;
   pendingSuggestions: Awaited<ReturnType<typeof listPendingTemplateProposals>>;
 }> {
-  const files = normalizeTemplateFiles(readTemplateRegistryFiles());
+  const files = normalizeTemplateFiles(cloneTemplateFiles());
   const pendingSuggestions = await listPendingTemplateProposals(config.pendingTemplateProposalPath);
+  const stagedFiles = applyPendingSuggestionsToDraftFiles(files, pendingSuggestions);
   return {
     ok: true,
     registryVersion: getTemplateRegistry().registryVersion,
-    categories: files
+    categories: stagedFiles
       .sort((left, right) => CATEGORIES.indexOf(left.category) - CATEGORIES.indexOf(right.category))
       .map((file) => ({
         category: file.category,

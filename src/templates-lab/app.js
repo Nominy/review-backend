@@ -424,7 +424,7 @@
             escapeHtml((proposal.category || "Unknown") + " | " + (proposal.operation || "pending")) +
             "</div>",
           "</div>",
-          '<button type="button" class="secondary pending-apply-btn">Apply To Draft</button>',
+          '<span class="decision-state">Already staged in draft</span>',
           "</div>",
           '<div class="pending-item-desc">' + escapeHtml(proposal.description || "") + "</div>",
           '<div class="pending-item-reason">' + escapeHtml(proposal.reason || "") + "</div>",
@@ -497,7 +497,12 @@
     } else {
       setCreateMode();
     }
-    setStatus("Templates loaded.", false);
+    setStatus(
+      state.pendingSuggestions.length
+        ? "Templates loaded. Approved suggestions are already staged in the draft."
+        : "Templates loaded.",
+      false
+    );
     return true;
   }
 
@@ -1048,24 +1053,6 @@
     }
   }
 
-  function onPendingSuggestionsClick(event) {
-    const button = event.target.closest(".pending-apply-btn");
-    if (!button) {
-      return;
-    }
-    const card = button.closest(".pending-item");
-    const queueId = card && card.getAttribute("data-queue-id");
-    if (!queueId) {
-      return;
-    }
-
-    try {
-      applyPendingSuggestionToDraft(queueId);
-    } catch (error) {
-      handleError(error);
-    }
-  }
-
   function onVariantListClick(event) {
     const button = event.target.closest(".variant-remove");
     if (!button) {
@@ -1150,8 +1137,6 @@
   els.createReportTexts.addEventListener("click", onVariantListClick);
   els.editReportTexts.addEventListener("click", onVariantListClick);
   els.templateList.addEventListener("click", onListClick);
-  els.pendingSuggestions.addEventListener("click", onPendingSuggestionsClick);
-
   updateDraftControls();
   resetCreateForm();
   refreshTemplates().catch(handleError);

@@ -15,9 +15,11 @@ import { appendPendingTemplateProposal } from "./pending-template-proposals";
 import { renderFeedbackFromTemplateMatches, renderTemplateOpinionText } from "./template-renderer";
 import { extractChanges } from "./change-extractor";
 import { generateTemplateSuggestions } from "./template-suggestion-engine";
+import { CATEGORIES } from "./rules";
 import type {
   AnalyticsEventType,
   BabelDiffPayload,
+  CategoryName,
   CreateReviewSessionResponse,
   FinalizeReviewSessionResponse,
   GenerateResponse,
@@ -134,6 +136,131 @@ function buildCardRationale(card: {
     return card.templateDescription;
   }
   return `Matched template ${card.matchedTemplateId}.`;
+}
+
+function clipNote(note: string, maxLen = 500): string {
+  const clean = note.trim();
+  if (clean.length <= maxLen) {
+    return clean;
+  }
+
+  const candidate = clean.slice(0, maxLen);
+  const cutIndex = candidate.lastIndexOf(" ");
+  if (cutIndex >= 0) {
+    return candidate.slice(0, cutIndex).trim();
+  }
+  return candidate.trim();
+}
+
+function buildSyntheticTemplateId(proposal: TemplateSuggestionProposal): string {
+  const targetTemplateId = String(proposal.targetTemplateId || "").trim();
+  return targetTemplateId || `local.${proposal.proposalId}`;
+}
+
+function buildOpinionTextFromProposal(proposal: TemplateSuggestionProposal, fallback = ""): string {
+  const reportTexts = Array.isArray(proposal.reportTexts)
+    ? proposal.reportTexts.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  return clipNote(reportTexts[0] || fallback || "No system issue selected.");
+}
+
+function buildCategoryFeedbackFromCards(cards: ReviewSessionCard[]): {
+  feedback: CreateReviewSessionResponse["categoryFeedback"];
+  matchedTemplateIds: string[];
+} {
+  const registry = getTemplateRegistry();
+  const matchedTemplateIds: string[] = [];
+  const seenTemplateIds = new Set<string>();
+  const notesByCategory = CATEGORIES.reduce((acc, category) => {
+    acc[category] = [];
+    return acc;
+  }, {} as Record<CategoryName, string[]>);
+
+  for (const card of cards) {
+    if (card.matchedTemplateId && !seenTemplateIds.has(card.matchedTemplateId)) {
+      seenTemplateIds.add(card.matchedTemplateId);
+      matchedTemplateIds.push(card.matchedTemplateId);
+    }
+
+    const note = String(card.opinionText || "").trim();
+    if (!card.matchedTemplateId || !note) {
+      continue;
+    }
+
+    for (const category of card.categories) {
+      const bucket = notesByCategory[category];
+      if (!bucket.includes(note)) {
+        bucket.push(note);
+      }
+    }
+  }
+
+  return {
+    feedback: CATEGORIES.map((category) => {
+      const note = notesByCategory[category].length
+        ? clipNote(notesByCategory[category].join(" "))
+        : registry.defaultTextByCategory[category];
+      return {
+        category,
+        score: 1,
+        note
+      };
+    }),
+    matchedTemplateIds
+  };
+}
+
+function applyApprovedProposalToSession(
+  session: ReviewSessionRecord,
+  proposal: TemplateSuggestionProposal
+): ReviewSessionRecord {
+  const proposalCardIds = new Set(proposal.sourceCardIds || []);
+  const targetTemplateId = String(proposal.targetTemplateId || "").trim();
+  const replacementTemplateId = buildSyntheticTemplateId(proposal);
+
+  const cards = session.cards.map((card) => {
+    const affectsSourceCard = proposalCardIds.has(card.id);
+    const affectsMatchedTemplate = !!targetTemplateId && card.matchedTemplateId === targetTemplateId;
+    const shouldPatch =
+      proposal.operation === "create_template"
+        ? affectsSourceCard
+        : affectsSourceCard || affectsMatchedTemplate;
+
+    if (!shouldPatch) {
+      return card;
+    }
+
+    if (proposal.operation === "disable_template") {
+      return {
+        ...card,
+        matchedTemplateId: null,
+        templateTitle: null,
+        templateDescription: null,
+        opinionText: "No system issue selected.",
+        rationale: "No system issue selected for this change yet."
+      };
+    }
+
+    const nextCard: ReviewSessionCard = {
+      ...card,
+      matchedTemplateId: replacementTemplateId,
+      templateTitle: proposal.title,
+      templateDescription: proposal.description,
+      opinionText: buildOpinionTextFromProposal(proposal, card.opinionText || proposal.description || ""),
+      rationale: ""
+    };
+    nextCard.rationale = buildCardRationale(nextCard);
+    return nextCard;
+  });
+
+  const { feedback, matchedTemplateIds } = buildCategoryFeedbackFromCards(cards);
+
+  return {
+    ...session,
+    cards,
+    categoryFeedback: feedback,
+    matchedTemplateIds
+  };
 }
 
 function buildSessionCards(input: {
@@ -488,6 +615,7 @@ export async function decideInteractiveTemplateSuggestion(input: {
   decision: "approved" | "rejected";
 }): Promise<CreateReviewSessionResponse> {
   const session = await updateReviewSession(config.reviewSessionsDir, input.sessionId, (current) => {
+    const decidedAt = new Date().toISOString();
     const proposals = current.proposals.map((proposal) => {
       if (proposal.proposalId !== input.proposalId) {
         return proposal;
@@ -495,14 +623,25 @@ export async function decideInteractiveTemplateSuggestion(input: {
       return {
         ...proposal,
         decision: input.decision,
-        decidedAt: new Date().toISOString()
+        decidedAt
       };
     });
 
-    return {
+    const next: ReviewSessionRecord = {
       ...current,
       proposals
     };
+
+    if (input.decision !== "approved") {
+      return next;
+    }
+
+    const approvedProposal = proposals.find((proposal) => proposal.proposalId === input.proposalId);
+    if (!approvedProposal) {
+      return next;
+    }
+
+    return applyApprovedProposalToSession(next, approvedProposal);
   });
 
   const proposal = session.proposals.find((item) => item.proposalId === input.proposalId);
