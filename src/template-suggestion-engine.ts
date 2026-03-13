@@ -3,6 +3,7 @@ import { requestOpenRouter, parseModelJson } from "./openrouter";
 import { CATEGORIES } from "./rules";
 import type {
   CategoryName,
+  ReviewSessionCard,
   ReviewSessionRecord,
   TemplateSuggestionOperation,
   TemplateSuggestionProposal
@@ -75,6 +76,19 @@ function normalizeProposal(raw: unknown): TemplateSuggestionProposal | null {
   };
 }
 
+function describeCard(card: ReviewSessionCard): string {
+  if (card.beforeText && card.afterText) {
+    return `${card.summary} | Before: ${card.beforeText} | After: ${card.afterText}`;
+  }
+  if (card.afterText) {
+    return `${card.summary} | After: ${card.afterText}`;
+  }
+  if (card.beforeText) {
+    return `${card.summary} | Before: ${card.beforeText}`;
+  }
+  return card.summary;
+}
+
 function buildSessionCommentBundle(session: ReviewSessionRecord): Array<Record<string, unknown>> {
   const items: Array<Record<string, unknown>> = [];
 
@@ -88,7 +102,9 @@ function buildSessionCommentBundle(session: ReviewSessionRecord): Array<Record<s
       cardId: card.id,
       changeIndex: card.changeIndex,
       type: card.type,
-      description: card.description,
+      summary: card.summary,
+      ...(card.beforeText ? { beforeText: card.beforeText } : {}),
+      ...(card.afterText ? { afterText: card.afterText } : {}),
       categories: card.categories,
       matchedTemplateId: card.matchedTemplateId,
       templateTitle: card.templateTitle,
@@ -117,6 +133,8 @@ function buildDeterministicSuggestions(session: ReviewSessionRecord): TemplateSu
       continue;
     }
 
+    const cardDescription = describeCard(card);
+
     if (card.matchedTemplateId) {
       proposals.push({
         proposalId: randomUUID(),
@@ -124,7 +142,7 @@ function buildDeterministicSuggestions(session: ReviewSessionRecord): TemplateSu
         category: card.categories[0] || "Word Accuracy",
         targetTemplateId: card.matchedTemplateId,
         title: card.templateTitle || `Update ${card.matchedTemplateId}`,
-        description: `Reviewer requested a clearer template for: ${card.description}`,
+        description: `Reviewer requested a clearer template for: ${cardDescription}`,
         reportTexts: [comment],
         reason: `Derived from reviewer comment on ${card.id}.`,
         sourceCardIds: [card.id],
@@ -136,7 +154,7 @@ function buildDeterministicSuggestions(session: ReviewSessionRecord): TemplateSu
         operation: "create_template",
         category: card.categories[0] || "Word Accuracy",
         title: `New pattern from ${card.id}`,
-        description: `Reviewer highlighted an uncovered issue for: ${card.description}`,
+        description: `Reviewer highlighted an uncovered issue for: ${cardDescription}`,
         reportTexts: [comment],
         reason: `Derived from reviewer comment on unmatched ${card.id}.`,
         sourceCardIds: [card.id],

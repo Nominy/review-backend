@@ -231,6 +231,9 @@ export type Change = {
   index: number;
   type: ChangeType;
   categories: CategoryName[];
+  summary: string;
+  beforeText?: string;
+  afterText?: string;
   description: string;
 };
 
@@ -276,7 +279,9 @@ export type ReviewSessionCard = {
   id: string;
   changeIndex: number;
   type: ChangeType;
-  description: string;
+  summary: string;
+  beforeText?: string;
+  afterText?: string;
   categories: CategoryName[];
   matchedTemplateId: string | null;
   templateTitle: string | null;
@@ -377,3 +382,5 @@ export type SubmitTranscriptReviewAnalyticsResponse = {
   reviewActionId: string;
   prepared: PreparedPayload;
 };
+
+

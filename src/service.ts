@@ -159,7 +159,9 @@ function buildSessionCards(input: {
       id: `change-${change.index}`,
       changeIndex: change.index,
       type: change.type,
-      description: change.description,
+      summary: change.summary,
+      ...(change.beforeText ? { beforeText: change.beforeText } : {}),
+      ...(change.afterText ? { afterText: change.afterText } : {}),
       categories: change.categories,
       matchedTemplateId: template?.id || null,
       templateTitle: template?.title || null,
@@ -613,3 +615,4 @@ export async function submitTranscriptReviewActionAnalytics(input: {
     prepared
   };
 }
+

@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import type {
   BabelDiffPayload,
+  Change,
   CreateReviewSessionResponse,
   FeedbackItem,
   NormalizedState,
@@ -46,6 +47,14 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
+function asOptionalString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 function parseComments(value: unknown): ReviewSessionComments {
   if (!isObject(value)) {
     return { sessionComment: "", cardComments: {} };
@@ -73,10 +82,85 @@ function parseProposals(value: unknown): TemplateSuggestionProposal[] {
   return value.filter((item) => isObject(item)) as TemplateSuggestionProposal[];
 }
 
+function parseChange(value: unknown): Change | null {
+  if (!isObject(value)) {
+    return null;
+  }
+
+  const description = String(value.description || "").trim();
+  const summary = String(value.summary || description || "Change").trim();
+  const categories = Array.isArray(value.categories)
+    ? value.categories.filter((item): item is Change["categories"][number] => typeof item === "string")
+    : [];
+
+  return {
+    index: Number(value.index) || 0,
+    type: String(value.type || "TEXT") as Change["type"],
+    categories,
+    summary,
+    ...(asOptionalString(value.beforeText) ? { beforeText: asOptionalString(value.beforeText) } : {}),
+    ...(asOptionalString(value.afterText) ? { afterText: asOptionalString(value.afterText) } : {}),
+    description
+  };
+}
+
+function parseCard(value: unknown): ReviewSessionCard | null {
+  if (!isObject(value)) {
+    return null;
+  }
+
+  const legacyDescription = String(value.description || "").trim();
+  const summary = String(value.summary || legacyDescription || "Change").trim();
+  const categories = Array.isArray(value.categories)
+    ? value.categories.filter((item): item is ReviewSessionCard["categories"][number] => typeof item === "string")
+    : [];
+
+  return {
+    id: String(value.id || "").trim(),
+    changeIndex: Number(value.changeIndex) || 0,
+    type: String(value.type || "TEXT") as ReviewSessionCard["type"],
+    summary,
+    ...(asOptionalString(value.beforeText) ? { beforeText: asOptionalString(value.beforeText) } : {}),
+    ...(asOptionalString(value.afterText) ? { afterText: asOptionalString(value.afterText) } : {}),
+    categories,
+    matchedTemplateId: asOptionalString(value.matchedTemplateId) || null,
+    templateTitle: asOptionalString(value.templateTitle) || null,
+    templateDescription: asOptionalString(value.templateDescription) || null,
+    opinionText: String(value.opinionText || "").trim(),
+    rationale: String(value.rationale || "").trim()
+  };
+}
+
 function parseSession(value: unknown): ReviewSessionRecord {
   if (!isObject(value)) {
     throw new Error("Session payload must be an object.");
   }
+
+  const changes = Array.isArray(value.changes)
+    ? value.changes.map((item) => parseChange(item)).filter((item): item is Change => !!item)
+    : [];
+  const changesByIndex = new Map(changes.map((change) => [change.index, change]));
+  const cards = Array.isArray(value.cards)
+    ? value.cards
+        .map((item) => parseCard(item))
+        .filter((item): item is ReviewSessionCard => !!item)
+        .map((card) => {
+          const matchingChange = changesByIndex.get(card.changeIndex);
+          return {
+            ...card,
+            summary:
+              card.summary && card.summary !== "Change"
+                ? card.summary
+                : matchingChange?.summary || card.summary,
+            ...(!card.beforeText && matchingChange?.beforeText
+              ? { beforeText: matchingChange.beforeText }
+              : {}),
+            ...(!card.afterText && matchingChange?.afterText
+              ? { afterText: matchingChange.afterText }
+              : {})
+          };
+        })
+    : [];
 
   return {
     sessionId: String(value.sessionId || "").trim(),
@@ -87,8 +171,8 @@ function parseSession(value: unknown): ReviewSessionRecord {
     current: value.current as NormalizedState,
     ...(value.babelDiff ? { babelDiff: value.babelDiff as BabelDiffPayload } : {}),
     prepared: value.prepared as PreparedPayload,
-    changes: Array.isArray(value.changes) ? (value.changes as CreateSessionInput["changes"]) : [],
-    cards: Array.isArray(value.cards) ? (value.cards as ReviewSessionCard[]) : [],
+    changes,
+    cards,
     categoryFeedback: Array.isArray(value.categoryFeedback) ? (value.categoryFeedback as FeedbackItem[]) : [],
     matchedTemplateIds: Array.isArray(value.matchedTemplateIds)
       ? value.matchedTemplateIds.filter((item): item is string => typeof item === "string")
@@ -176,3 +260,4 @@ export async function updateReviewSession(
     return next;
   });
 }
+
