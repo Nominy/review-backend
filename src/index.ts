@@ -22,6 +22,7 @@ import {
   updateTemplateForLab
 } from "./template-admin";
 import type { AnalyticsEventType, BabelDiffPayload, NormalizedState } from "./types";
+import { BACKEND_VERSION } from "./version";
 
 type PrepareBody = {
   reviewActionId: string;
@@ -359,6 +360,7 @@ const app = new Elysia()
     return {
       ok: true,
       service: "babel-review-backend",
+      backendVersion: BACKEND_VERSION,
       testMode: config.openRouterTestMode,
       now: new Date().toISOString(),
       openRouterCredits: credits

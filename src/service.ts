@@ -16,6 +16,7 @@ import { renderFeedbackFromTemplateMatches, renderTemplateOpinionText } from "./
 import { extractChanges } from "./change-extractor";
 import { generateTemplateSuggestions } from "./template-suggestion-engine";
 import { CATEGORIES } from "./rules";
+import { BACKEND_VERSION } from "./version";
 import type {
   AnalyticsEventType,
   BabelDiffPayload,
@@ -96,6 +97,7 @@ function toSessionResponse(session: ReviewSessionRecord): CreateReviewSessionRes
   return {
     sessionId: session.sessionId,
     reviewActionId: session.reviewActionId,
+    backendVersion: BACKEND_VERSION,
     prepared: session.prepared,
     changes: session.changes,
     cards: session.cards,
@@ -712,6 +714,7 @@ export async function finalizeInteractiveReviewSession(input: {
   return {
     sessionId: session.sessionId,
     reviewActionId: session.reviewActionId,
+    backendVersion: BACKEND_VERSION,
     categoryFeedback: session.categoryFeedback,
     appliedAt: new Date().toISOString(),
     mode: input.mode,

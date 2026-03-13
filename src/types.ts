@@ -336,6 +336,13 @@ export type ReviewSessionComments = {
   cardComments: Record<string, string>;
 };
 
+export type BackendVersionInfo = {
+  service: string;
+  release: string;
+  apiSchema: number;
+  evidenceSchema: number;
+};
+
 export type ReviewSessionRecord = {
   sessionId: string;
   createdAt: string;
@@ -357,6 +364,7 @@ export type ReviewSessionRecord = {
 export type CreateReviewSessionResponse = {
   sessionId: string;
   reviewActionId: string;
+  backendVersion: BackendVersionInfo;
   prepared: PreparedPayload;
   changes: Change[];
   cards: ReviewSessionCard[];
@@ -370,6 +378,7 @@ export type CreateReviewSessionResponse = {
 export type FinalizeReviewSessionResponse = {
   sessionId: string;
   reviewActionId: string;
+  backendVersion: BackendVersionInfo;
   categoryFeedback: FeedbackItem[];
   appliedAt: string;
   mode: "skip" | "apply";
