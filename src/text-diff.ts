@@ -107,15 +107,15 @@ function buildSnippets(
   }
 
   return groups.map((group) => {
-    const beforeContext = collectContextTokens(edits, group.start, "before", contextWords);
-    const afterContext = collectContextTokens(edits, group.end, "after", contextWords);
-    const beforeCore = collectGroupTokens(edits, group.start, group.end, "before");
-    const afterCore = collectGroupTokens(edits, group.start, group.end, "after");
+    const beforeContext = collectContextText(edits, group.start, "before", contextWords);
+    const afterContext = collectContextText(edits, group.end, "after", contextWords);
+    const beforeCore = collectGroupText(edits, group.start, group.end, "before");
+    const afterCore = collectGroupText(edits, group.start, group.end, "after");
     const inline = buildInlineGroup(edits, group.start, group.end, contextWords);
 
     return {
-      before: normalizeSnippetTokens([...beforeContext, ...beforeCore, ...afterContext]),
-      after: normalizeSnippetTokens([...beforeContext, ...afterCore, ...afterContext]),
+      before: joinSnippetParts(beforeContext, beforeCore, afterContext),
+      after: joinSnippetParts(beforeContext, afterCore, afterContext),
       inline,
       editCount: countEditsInRange(edits, group.start, group.end)
     };
@@ -185,12 +185,8 @@ function buildInlineGroup(
   end: number,
   contextWords: number
 ): string {
-  const beforeContext = normalizeSnippetTokens(
-    collectContextTokens(edits, start, "before", contextWords)
-  );
-  const afterContext = normalizeSnippetTokens(
-    collectContextTokens(edits, end, "after", contextWords)
-  );
+  const beforeContext = normalizeForDisplay(collectContextText(edits, start, "before", contextWords));
+  const afterContext = normalizeForDisplay(collectContextText(edits, end, "after", contextWords));
   const editParts: string[] = [];
 
   for (let i = start; i <= end; i++) {
@@ -208,11 +204,11 @@ function buildInlineGroup(
     }
   }
 
-  return [
+  return normalizeForDisplay([
     beforeContext ? `...${beforeContext} ` : "",
     editParts.join(" "),
     afterContext ? ` ${afterContext}...` : ""
-  ].join("").replace(/\s+/g, " ").trim();
+  ].join(""));
 }
 
 function collectContextTokens(
@@ -244,13 +240,38 @@ function collectContextTokens(
   return words;
 }
 
-function collectGroupTokens(
+function collectContextText(
+  edits: WordEdit[],
+  editIdx: number,
+  direction: "before" | "after",
+  maxWords: number
+): string {
+  const chunks: string[] = [];
+
+  if (direction === "before") {
+    for (let i = 0; i < editIdx; i++) {
+      if (edits[i].op === "equal") {
+        chunks.push(edits[i].text);
+      }
+    }
+    return takeLastWordSlice(chunks.join(""), maxWords);
+  }
+
+  for (let i = editIdx + 1; i < edits.length; i++) {
+    if (edits[i].op === "equal") {
+      chunks.push(edits[i].text);
+    }
+  }
+  return takeFirstWordSlice(chunks.join(""), maxWords);
+}
+
+function collectGroupText(
   edits: WordEdit[],
   start: number,
   end: number,
   side: "before" | "after"
-): string[] {
-  const tokens: string[] = [];
+): string {
+  const parts: string[] = [];
 
   for (let i = start; i <= end; i++) {
     const edit = edits[i];
@@ -260,20 +281,47 @@ function collectGroupTokens(
     if (side === "after" && edit.op === "delete") {
       continue;
     }
-    tokens.push(...toTokens(edit.text));
+    parts.push(edit.text);
   }
 
-  return tokens;
+  return parts.join("");
 }
 
-function normalizeSnippetTokens(tokens: string[]): string {
-  return normalize(tokens.join(" "))
-    .replace(/\s+([,.;:!?)\]\}»])/g, "$1")
-    .replace(/([(\[{«])\s+/g, "$1");
+function joinSnippetParts(...parts: string[]): string {
+  return normalizeForDisplay(parts.join(""));
 }
 
 function toTokens(text: string): string[] {
   return String(text || "").trim().split(/\s+/).filter(Boolean);
+}
+
+function takeLastWordSlice(text: string, maxWords: number): string {
+  const matches = [...String(text || "").matchAll(/\S+/g)];
+  if (!matches.length || maxWords <= 0) {
+    return "";
+  }
+
+  const startIndex = matches[Math.max(0, matches.length - maxWords)].index || 0;
+  return text.slice(startIndex);
+}
+
+function takeFirstWordSlice(text: string, maxWords: number): string {
+  const matches = [...String(text || "").matchAll(/\S+/g)];
+  if (!matches.length || maxWords <= 0) {
+    return "";
+  }
+
+  const target = matches[Math.min(matches.length, maxWords) - 1];
+  const endIndex = (target.index || 0) + target[0].length;
+  return text.slice(0, endIndex);
+}
+
+function normalizeForDisplay(text: string): string {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.;:!?)\]\}»])/g, "$1")
+    .replace(/([(\[{«])\s+/g, "$1")
+    .trim();
 }
 
 /* ------------------------------------------------------------------ */
