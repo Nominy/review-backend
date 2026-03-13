@@ -36,7 +36,11 @@ function trimEvidenceText(text: string): string | undefined {
   return normalized ? normalized : undefined;
 }
 
-function formatTextChange(before: string, after: string): string {
+function formatTextChange(before: string, after: string, inlineDiff?: string): string {
+  // Prefer focused inline diff when available
+  if (inlineDiff) {
+    return inlineDiff;
+  }
   return `"${escapeQuotes(before)}" -> "${escapeQuotes(after)}"`;
 }
 
@@ -110,6 +114,7 @@ function extractTextChanges(packet: PromptPacket): Change[] {
     const hasTagDelta = pair.beforeTagCount !== pair.afterTagCount;
     const beforeText = trimEvidenceText(pair.fullBefore || pair.before);
     const afterText = trimEvidenceText(pair.fullAfter || pair.after);
+    const description = formatTextChange(pair.before, pair.after, pair.inlineDiff);
 
     changes.push({
       index: 0,
@@ -118,7 +123,7 @@ function extractTextChanges(packet: PromptPacket): Change[] {
       summary: summarizeTextPair(pair.before, pair.after),
       ...(beforeText ? { beforeText } : {}),
       ...(afterText ? { afterText } : {}),
-      description: formatTextChange(pair.before, pair.after)
+      description
     });
 
     if (hasTagDelta) {
@@ -129,7 +134,7 @@ function extractTextChanges(packet: PromptPacket): Change[] {
         summary: summarizeTagDelta(pair.beforeTagCount, pair.afterTagCount),
         ...(beforeText ? { beforeText } : {}),
         ...(afterText ? { afterText } : {}),
-        description: `${summarizeTagDelta(pair.beforeTagCount, pair.afterTagCount)}: ${formatTextChange(pair.before, pair.after)}`
+        description: `${summarizeTagDelta(pair.beforeTagCount, pair.afterTagCount)}: ${description}`
       });
     }
   }

@@ -52,6 +52,10 @@ export type PromptTextDiff = {
   after: string;
   fullBefore?: string;
   fullAfter?: string;
+  /** Compact inline diff: "...context [-old+new] context..." */
+  inlineDiff?: string;
+  /** Number of discrete word-level edits */
+  editCount?: number;
   beforeTagCount: number;
   afterTagCount: number;
 };

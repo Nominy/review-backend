@@ -7,9 +7,10 @@ import type {
   PromptTextDiff
 } from "./types";
 import { buildBabelDiffPromptPacket } from "./babel-diff";
+import { alignSegments, diffWords } from "./text-diff";
 
-export const METRICS_VERSION = "v5";
-export const PROMPT_VERSION = "v10";
+export const METRICS_VERSION = "v6";
+export const PROMPT_VERSION = "v11";
 
 function normalizeWhitespace(text: string): string {
   return String(text || "").replace(/\s+/g, " ").trim();
@@ -105,21 +106,6 @@ function extractTagTokens(text: string): string[] {
   return matches ? matches.map((item) => normalizeWhitespace(item)).filter(Boolean) : [];
 }
 
-function pairAnnotationsByIndex(
-  original: Annotation[],
-  current: Annotation[]
-): Array<{ before: Annotation; after: Annotation }> {
-  const count = Math.min(original.length, current.length);
-  const pairs: Array<{ before: Annotation; after: Annotation }> = [];
-  for (let index = 0; index < count; index += 1) {
-    const before = original[index];
-    const after = current[index];
-    if (!before || !after) continue;
-    pairs.push({ before, after });
-  }
-  return pairs;
-}
-
 function buildLocalChangedPairs(
   original: Annotation[],
   current: Annotation[]
@@ -127,17 +113,33 @@ function buildLocalChangedPairs(
   changedPairs: PromptTextDiff[];
   localTextChangeCount: number;
   localTagChangeCount: number;
+  deletedSegments: Annotation[];
+  insertedSegments: Annotation[];
 } {
-  const pairs = pairAnnotationsByIndex(original, current);
+  const aligned = alignSegments(original, current);
   const changedPairs: PromptTextDiff[] = [];
   let localTextChangeCount = 0;
   let localTagChangeCount = 0;
+  const deletedSegments: Annotation[] = [];
+  const insertedSegments: Annotation[] = [];
 
-  for (const pair of pairs) {
-    const beforeText = normalizeWhitespace(pair.before.content || "");
-    const afterText = normalizeWhitespace(pair.after.content || "");
-    const beforeTags = extractTagTokens(pair.before.content || "");
-    const afterTags = extractTagTokens(pair.after.content || "");
+  for (const pair of aligned) {
+    if (pair.op === "deleted") {
+      deletedSegments.push(pair.before!);
+      localTextChangeCount += 1;
+      continue;
+    }
+    if (pair.op === "inserted") {
+      insertedSegments.push(pair.after!);
+      localTextChangeCount += 1;
+      continue;
+    }
+
+    // matched pair — check for text/tag changes
+    const beforeText = normalizeWhitespace(pair.before!.content || "");
+    const afterText = normalizeWhitespace(pair.after!.content || "");
+    const beforeTags = extractTagTokens(pair.before!.content || "");
+    const afterTags = extractTagTokens(pair.after!.content || "");
     const textChanged = beforeText !== afterText;
     const tagsChanged = beforeTags.join(" | ") !== afterTags.join(" | ");
 
@@ -146,8 +148,8 @@ function buildLocalChangedPairs(
     }
 
     if (!isUsefulLocalChangedPair({
-      before: pair.before,
-      after: pair.after,
+      before: pair.before!,
+      after: pair.after!,
       beforeText,
       afterText,
       tagsChanged
@@ -158,9 +160,13 @@ function buildLocalChangedPairs(
     if (textChanged) localTextChangeCount += 1;
     if (tagsChanged) localTagChangeCount += 1;
 
+    // Compute focused word-level diff
+    const wordDiff = textChanged ? diffWords(beforeText, afterText) : null;
+
     changedPairs.push({
       before: beforeText,
       after: afterText,
+      ...(wordDiff ? { inlineDiff: wordDiff.inline, editCount: wordDiff.editCount } : {}),
       beforeTagCount: beforeTags.length,
       afterTagCount: afterTags.length
     });
@@ -169,7 +175,9 @@ function buildLocalChangedPairs(
   return {
     changedPairs: changedPairs.slice(0, 24),
     localTextChangeCount,
-    localTagChangeCount
+    localTagChangeCount,
+    deletedSegments: deletedSegments.slice(0, 12),
+    insertedSegments: insertedSegments.slice(0, 12)
   };
 }
 
@@ -207,12 +215,14 @@ export function computeReviewMetrics(
   const {
     changedPairs,
     localTextChangeCount,
-    localTagChangeCount
+    localTagChangeCount,
+    deletedSegments,
+    insertedSegments
   } = buildLocalChangedPairs(oldAnnotations, newAnnotations);
   const originalTags = buildTagSamples(oldAnnotations);
   const currentTags = buildTagSamples(newAnnotations);
-  const originalOnlySamples = oldAnnotations.slice(newAnnotations.length, newAnnotations.length + 12).map(toSegmentSample);
-  const currentOnlySamples = newAnnotations.slice(oldAnnotations.length, oldAnnotations.length + 12).map(toSegmentSample);
+  const originalOnlySamples = deletedSegments.map(toSegmentSample);
+  const currentOnlySamples = insertedSegments.map(toSegmentSample);
 
   const promptPacket: PromptPacket = {
     session: {
