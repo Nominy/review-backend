@@ -231,6 +231,12 @@ h1 {
   padding: 18px;
 }
 
+.panel-sub {
+  margin: 8px 0 0;
+  color: var(--muted);
+  max-width: 72ch;
+}
+
 .panel-head {
   display: flex;
   justify-content: space-between;
@@ -386,6 +392,48 @@ h1 {
   border: 1px dashed var(--line);
   border-radius: 18px;
   color: var(--muted);
+}
+
+.pending-panel {
+  margin-top: 16px;
+}
+
+.pending-list {
+  display: grid;
+  gap: 12px;
+}
+
+.pending-item {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel-strong);
+  padding: 14px;
+}
+
+.pending-item-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.pending-item-title {
+  font-weight: 700;
+}
+
+.pending-item-meta,
+.pending-item-desc,
+.pending-item-reason {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.pending-item-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 @media (max-width: 980px) {

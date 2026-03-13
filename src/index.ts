@@ -3,8 +3,14 @@ import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
 import {
   buildPreparedPayload,
+  createInteractiveReviewSession,
+  decideInteractiveTemplateSuggestion,
+  finalizeInteractiveReviewSession,
   generateFeedback,
-  submitTranscriptReviewActionAnalytics
+  generateInteractiveTemplateSuggestions,
+  getInteractiveReviewSession,
+  submitTranscriptReviewActionAnalytics,
+  updateInteractiveReviewSessionComments
 } from "./service";
 import { getReviewHistoryDetail, listReviewHistory } from "./history";
 import { config } from "./config";
@@ -15,7 +21,7 @@ import {
   saveTemplatesLabDraft,
   updateTemplateForLab
 } from "./template-admin";
-import type { BabelDiffPayload, NormalizedState } from "./types";
+import type { AnalyticsEventType, BabelDiffPayload, NormalizedState } from "./types";
 
 type PrepareBody = {
   reviewActionId: string;
@@ -28,6 +34,19 @@ type SubmitTranscriptReviewActionBody = PrepareBody & {
   inputBoxes?: Record<string, unknown>;
   aiReview?: unknown;
   metadata?: Record<string, unknown>;
+};
+
+type ReviewSessionCommentsBody = {
+  cardComments?: Record<string, unknown>;
+  sessionComment?: string;
+};
+
+type TemplateSuggestionDecisionBody = {
+  decision: "approved" | "rejected";
+};
+
+type FinalizeReviewSessionBody = {
+  mode?: "skip" | "apply";
 };
 
 type TemplatesLabCreateBody = {
@@ -241,6 +260,37 @@ function assertTemplatesLabSaveBody(body: unknown): asserts body is TemplatesLab
   }
 }
 
+function assertReviewSessionCommentsBody(body: unknown): asserts body is ReviewSessionCommentsBody {
+  if (!isObject(body)) {
+    throw new Error("Body must be an object.");
+  }
+  if (body.cardComments !== undefined && !isObject(body.cardComments)) {
+    throw new Error("cardComments must be an object when provided.");
+  }
+  if (body.sessionComment !== undefined && typeof body.sessionComment !== "string") {
+    throw new Error("sessionComment must be a string when provided.");
+  }
+}
+
+function assertTemplateSuggestionDecisionBody(
+  body: unknown
+): asserts body is TemplateSuggestionDecisionBody {
+  if (!isObject(body) || (body.decision !== "approved" && body.decision !== "rejected")) {
+    throw new Error("decision must be either approved or rejected.");
+  }
+}
+
+function assertFinalizeReviewSessionBody(
+  body: unknown
+): asserts body is FinalizeReviewSessionBody {
+  if (!isObject(body)) {
+    throw new Error("Body must be an object.");
+  }
+  if (body.mode !== undefined && body.mode !== "skip" && body.mode !== "apply") {
+    throw new Error("mode must be skip or apply when provided.");
+  }
+}
+
 function requireTemplatesLabAccess(
   authorization: string | undefined,
   set: { status?: number; headers?: Record<string, string> }
@@ -365,6 +415,87 @@ const app = new Elysia()
       return { error: msg };
     }
   })
+  .post("/api/review/sessions", async ({ body, set }) => {
+    try {
+      assertPrepareBody(body);
+      return await createInteractiveReviewSession({
+        reviewActionId: body.reviewActionId,
+        original: body.original,
+        current: body.current,
+        babelDiff: body.babelDiff ?? null
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      set.status = msg.includes("required") || msg.includes("Body") ? 400 : 500;
+      return { error: msg };
+    }
+  })
+  .get("/api/review/sessions/:sessionId", async ({ params, set }) => {
+    try {
+      return await getInteractiveReviewSession(params.sessionId);
+    } catch (error) {
+      const message = getErrorMessage(error);
+      set.status = message.includes("not found") ? 404 : 500;
+      return { error: message };
+    }
+  })
+  .post("/api/review/sessions/:sessionId/comments", async ({ params, body, set }) => {
+    try {
+      assertReviewSessionCommentsBody(body);
+      return await updateInteractiveReviewSessionComments({
+        sessionId: params.sessionId,
+        cardComments: body.cardComments,
+        sessionComment: body.sessionComment
+      });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      set.status = message.includes("not found")
+        ? 404
+        : getErrorStatus(error, message.includes("Body") ? 400 : 500);
+      return { error: message };
+    }
+  })
+  .post("/api/review/sessions/:sessionId/template-suggestions", async ({ params, set }) => {
+    try {
+      return await generateInteractiveTemplateSuggestions({
+        sessionId: params.sessionId
+      });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      set.status = message.includes("not found") ? 404 : getErrorStatus(error, 500);
+      return { error: message };
+    }
+  })
+  .post(
+    "/api/review/sessions/:sessionId/template-suggestions/:proposalId/decision",
+    async ({ params, body, set }) => {
+      try {
+        assertTemplateSuggestionDecisionBody(body);
+        return await decideInteractiveTemplateSuggestion({
+          sessionId: params.sessionId,
+          proposalId: params.proposalId,
+          decision: body.decision
+        });
+      } catch (error) {
+        const message = getErrorMessage(error);
+        set.status = message.includes("not found") ? 404 : getErrorStatus(error, 500);
+        return { error: message };
+      }
+    }
+  )
+  .post("/api/review/sessions/:sessionId/finalize", async ({ params, body, set }) => {
+    try {
+      assertFinalizeReviewSessionBody(body);
+      return await finalizeInteractiveReviewSession({
+        sessionId: params.sessionId,
+        mode: body.mode === "skip" ? "skip" : "apply"
+      });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      set.status = message.includes("not found") ? 404 : getErrorStatus(error, 500);
+      return { error: message };
+    }
+  })
   .get("/api/review-history", async ({ headers, query, set }) => {
     const blocked = requireHistoryAccess(headers.authorization, set);
     if (blocked) {
@@ -372,9 +503,21 @@ const app = new Elysia()
     }
 
     try {
+      const supportedEventTypes = new Set<AnalyticsEventType>([
+        "review_generate",
+        "submit_transcript_review_action",
+        "review_session_created",
+        "review_session_opened",
+        "review_card_commented",
+        "template_suggestions_generated",
+        "template_suggestion_approved",
+        "template_suggestion_rejected",
+        "interactive_session_skipped",
+        "interactive_review_applied"
+      ]);
       const eventType =
-        query.eventType === "review_generate" || query.eventType === "submit_transcript_review_action"
-          ? query.eventType
+        typeof query.eventType === "string" && supportedEventTypes.has(query.eventType as AnalyticsEventType)
+          ? (query.eventType as AnalyticsEventType)
           : "";
 
       return await listReviewHistory({
@@ -406,14 +549,14 @@ const app = new Elysia()
       return { error: message };
     }
   })
-  .get("/api/templates-lab/templates", ({ headers, set }) => {
+  .get("/api/templates-lab/templates", async ({ headers, set }) => {
     const blocked = requireTemplatesLabAccess(headers.authorization, set);
     if (blocked) {
       return blocked;
     }
 
     try {
-      return listTemplatesLabData();
+      return await listTemplatesLabData();
     } catch (error) {
       set.status = getErrorStatus(error);
       return { error: getErrorMessage(error) };
