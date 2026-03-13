@@ -27,6 +27,7 @@ import type {
   NormalizedState,
   PendingTemplateProposalQueueItem,
   PreparedPayload,
+  ReviewTemplate,
   ReviewClassification,
   ReviewSessionCard,
   ReviewSessionRecord,
@@ -165,6 +166,71 @@ function buildOpinionTextFromProposal(proposal: TemplateSuggestionProposal, fall
   return clipNote(reportTexts[0] || fallback || "No system issue selected.");
 }
 
+function buildClassificationsFromCards(cards: ReviewSessionCard[]): ReviewClassification[] {
+  return cards
+    .filter(
+      (card): card is ReviewSessionCard & { matchedTemplateId: string } =>
+        typeof card.matchedTemplateId === "string" &&
+        !!card.matchedTemplateId &&
+        !card.matchedTemplateId.startsWith("local.")
+    )
+    .map((card) => ({
+      change: card.changeIndex,
+      templateId: card.matchedTemplateId
+    }))
+    .sort((left, right) => left.change - right.change);
+}
+
+function recalculateSessionDerivedState(
+  session: ReviewSessionRecord,
+  cards: ReviewSessionCard[]
+): ReviewSessionRecord {
+  const { feedback, matchedTemplateIds } = buildCategoryFeedbackFromCards(cards);
+  return {
+    ...session,
+    cards,
+    categoryFeedback: feedback,
+    matchedTemplateIds,
+    classifications: buildClassificationsFromCards(cards)
+  };
+}
+
+function applyTemplateMatchToCard(input: {
+  card: ReviewSessionCard;
+  reviewActionId: string;
+  template: ReviewTemplate;
+}): ReviewSessionCard {
+  const nextCard: ReviewSessionCard = {
+    ...input.card,
+    categories: [input.template.category],
+    matchedTemplateId: input.template.id,
+    templateTitle: input.template.title,
+    templateDescription: input.template.description,
+    matchSource: "manual",
+    opinionText: renderTemplateOpinionText(input.template, input.reviewActionId),
+    rationale: ""
+  };
+  nextCard.rationale = buildCardRationale(nextCard);
+  return nextCard;
+}
+
+function clearTemplateMatchFromCard(card: ReviewSessionCard): ReviewSessionCard {
+  const nextSource =
+    card.matchSource === "manual" || card.matchSource === "model"
+      ? "manual_cleared"
+      : "unmatched";
+
+  return {
+    ...card,
+    matchedTemplateId: null,
+    templateTitle: null,
+    templateDescription: null,
+    matchSource: nextSource,
+    opinionText: "No system issue selected.",
+    rationale: "No system issue selected for this change yet."
+  };
+}
+
 function buildCategoryFeedbackFromCards(cards: ReviewSessionCard[]): {
   feedback: CreateReviewSessionResponse["categoryFeedback"];
   matchedTemplateIds: string[];
@@ -232,15 +298,10 @@ function applyApprovedProposalToSession(
     }
 
     if (proposal.operation === "disable_template") {
-      return {
+      return clearTemplateMatchFromCard({
         ...card,
-        categories: [proposal.category],
-        matchedTemplateId: null,
-        templateTitle: null,
-        templateDescription: null,
-        opinionText: "No system issue selected.",
-        rationale: "No system issue selected for this change yet."
-      };
+        categories: [proposal.category]
+      });
     }
 
     const nextCard: ReviewSessionCard = {
@@ -249,6 +310,7 @@ function applyApprovedProposalToSession(
       matchedTemplateId: replacementTemplateId,
       templateTitle: proposal.title,
       templateDescription: proposal.description,
+      matchSource: "manual",
       opinionText: buildOpinionTextFromProposal(proposal, card.opinionText || proposal.description || ""),
       rationale: ""
     };
@@ -256,14 +318,7 @@ function applyApprovedProposalToSession(
     return nextCard;
   });
 
-  const { feedback, matchedTemplateIds } = buildCategoryFeedbackFromCards(cards);
-
-  return {
-    ...session,
-    cards,
-    categoryFeedback: feedback,
-    matchedTemplateIds
-  };
+  return recalculateSessionDerivedState(session, cards);
 }
 
 function buildSessionCards(input: {
@@ -296,6 +351,10 @@ function buildSessionCards(input: {
       matchedTemplateId: template?.id || null,
       templateTitle: template?.title || null,
       templateDescription: template?.description || null,
+      initialMatchedTemplateId: template?.id || null,
+      initialTemplateTitle: template?.title || null,
+      initialTemplateDescription: template?.description || null,
+      matchSource: template ? "model" : "unmatched",
       opinionText,
       rationale: ""
     };
@@ -566,6 +625,64 @@ export async function updateInteractiveReviewSessionComments(input: {
       sessionId: session.sessionId,
       commentedCardIds: Object.keys(input.cardComments || {}),
       hasSessionComment: typeof input.sessionComment === "string" && !!input.sessionComment.trim()
+    }
+  });
+
+  return toSessionResponse(session);
+}
+
+export async function updateInteractiveReviewSessionCardTemplateMatch(input: {
+  sessionId: string;
+  cardId: string;
+  templateId?: string | null;
+}): Promise<CreateReviewSessionResponse> {
+  const requestedTemplateId = String(input.templateId || "").trim();
+  const registry = getTemplateRegistry();
+  const template = requestedTemplateId
+    ? registry.templatesById.get(requestedTemplateId) || null
+    : null;
+
+  if (requestedTemplateId && !template) {
+    throw new Error(`Template ${requestedTemplateId} not found.`);
+  }
+
+  const session = await updateReviewSession(config.reviewSessionsDir, input.sessionId, (current) => {
+    let cardFound = false;
+    const cards = current.cards.map((card) => {
+      if (card.id !== input.cardId) {
+        return card;
+      }
+
+      cardFound = true;
+      if (!template) {
+        return clearTemplateMatchFromCard(card);
+      }
+      return applyTemplateMatchToCard({
+        card,
+        reviewActionId: current.reviewActionId,
+        template
+      });
+    });
+
+    if (!cardFound) {
+      throw new Error("Review card not found.");
+    }
+
+    return recalculateSessionDerivedState(current, cards);
+  });
+
+  await safeLogAnalytics({
+    eventType: "review_card_commented",
+    reviewActionId: session.reviewActionId,
+    original: session.original,
+    current: session.current,
+    babelDiff: session.babelDiff,
+    prepared: session.prepared,
+    metadata: {
+      sessionId: session.sessionId,
+      cardId: input.cardId,
+      templateId: requestedTemplateId || null,
+      matchAction: requestedTemplateId ? "manual_select" : "manual_clear"
     }
   });
 

@@ -13,6 +13,7 @@ import type {
   ReviewSessionCard,
   ReviewSessionComments,
   ReviewSessionRecord,
+  TemplateMatchSource,
   TemplateSuggestionProposal
 } from "./types";
 
@@ -151,6 +152,21 @@ function parseCard(value: unknown): ReviewSessionCard | null {
     matchedTemplateId: asOptionalString(value.matchedTemplateId) || null,
     templateTitle: asOptionalString(value.templateTitle) || null,
     templateDescription: asOptionalString(value.templateDescription) || null,
+    initialMatchedTemplateId:
+      asOptionalString(value.initialMatchedTemplateId) ||
+      asOptionalString(value.matchedTemplateId) ||
+      null,
+    initialTemplateTitle:
+      asOptionalString(value.initialTemplateTitle) ||
+      asOptionalString(value.templateTitle) ||
+      null,
+    initialTemplateDescription:
+      asOptionalString(value.initialTemplateDescription) ||
+      asOptionalString(value.templateDescription) ||
+      null,
+    matchSource:
+      (asOptionalString(value.matchSource) as TemplateMatchSource | undefined) ||
+      (asOptionalString(value.matchedTemplateId) ? "model" : "unmatched"),
     opinionText: String(value.opinionText || "").trim(),
     rationale: String(value.rationale || "").trim()
   };

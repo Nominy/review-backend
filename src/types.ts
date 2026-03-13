@@ -258,6 +258,12 @@ export type ClassificationResponse = {
 
 export type ReviewClassification = ClassificationResponse["classifications"][number];
 
+export type TemplateMatchSource =
+  | "model"
+  | "manual"
+  | "manual_cleared"
+  | "unmatched";
+
 export type PreparedPayload = {
   preparedAt: string;
   stats: Record<string, unknown>;
@@ -299,8 +305,26 @@ export type ReviewSessionCard = {
   matchedTemplateId: string | null;
   templateTitle: string | null;
   templateDescription: string | null;
+  initialMatchedTemplateId: string | null;
+  initialTemplateTitle: string | null;
+  initialTemplateDescription: string | null;
+  matchSource: TemplateMatchSource;
   opinionText: string;
   rationale: string;
+};
+
+export type TemplateSearchResult = {
+  id: string;
+  title: string;
+  description: string;
+  category: CategoryName;
+  reportTexts: string[];
+  score: number;
+};
+
+export type TemplateSearchResponse = {
+  query: string;
+  results: TemplateSearchResult[];
 };
 
 export type TemplateSuggestionOperation =

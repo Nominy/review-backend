@@ -10,8 +10,10 @@ import {
   generateInteractiveTemplateSuggestions,
   getInteractiveReviewSession,
   submitTranscriptReviewActionAnalytics,
+  updateInteractiveReviewSessionCardTemplateMatch,
   updateInteractiveReviewSessionComments
 } from "./service";
+import { searchTemplates } from "./template-search";
 import { getReviewHistoryDetail, listReviewHistory } from "./history";
 import { config } from "./config";
 import {
@@ -40,6 +42,10 @@ type SubmitTranscriptReviewActionBody = PrepareBody & {
 type ReviewSessionCommentsBody = {
   cardComments?: Record<string, unknown>;
   sessionComment?: string;
+};
+
+type ReviewSessionTemplateMatchBody = {
+  templateId?: string | null;
 };
 
 type TemplateSuggestionDecisionBody = {
@@ -273,6 +279,21 @@ function assertReviewSessionCommentsBody(body: unknown): asserts body is ReviewS
   }
 }
 
+function assertReviewSessionTemplateMatchBody(
+  body: unknown
+): asserts body is ReviewSessionTemplateMatchBody {
+  if (!isObject(body)) {
+    throw new Error("Body must be an object.");
+  }
+  if (
+    body.templateId !== undefined &&
+    body.templateId !== null &&
+    typeof body.templateId !== "string"
+  ) {
+    throw new Error("templateId must be a string or null when provided.");
+  }
+}
+
 function assertTemplateSuggestionDecisionBody(
   body: unknown
 ): asserts body is TemplateSuggestionDecisionBody {
@@ -441,6 +462,18 @@ const app = new Elysia()
       return { error: message };
     }
   })
+  .get("/api/review/templates/search", ({ query, set }) => {
+    try {
+      return searchTemplates(
+        typeof query.q === "string" ? query.q : "",
+        typeof query.limit === "string" ? Number(query.limit) : Number(query.limit)
+      );
+    } catch (error) {
+      const message = getErrorMessage(error);
+      set.status = getErrorStatus(error, 500);
+      return { error: message };
+    }
+  })
   .post("/api/review/sessions/:sessionId/comments", async ({ params, body, set }) => {
     try {
       assertReviewSessionCommentsBody(body);
@@ -448,6 +481,25 @@ const app = new Elysia()
         sessionId: params.sessionId,
         cardComments: body.cardComments,
         sessionComment: body.sessionComment
+      });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      set.status = message.includes("not found")
+        ? 404
+        : getErrorStatus(error, message.includes("Body") ? 400 : 500);
+      return { error: message };
+    }
+  })
+  .post("/api/review/sessions/:sessionId/cards/:cardId/template-match", async ({ params, body, set }) => {
+    try {
+      assertReviewSessionTemplateMatchBody(body);
+      return await updateInteractiveReviewSessionCardTemplateMatch({
+        sessionId: params.sessionId,
+        cardId: params.cardId,
+        templateId:
+          typeof body.templateId === "string" && body.templateId.trim()
+            ? body.templateId.trim()
+            : null
       });
     } catch (error) {
       const message = getErrorMessage(error);
