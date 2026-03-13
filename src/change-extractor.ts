@@ -112,8 +112,6 @@ function extractTextChanges(packet: PromptPacket): Change[] {
 
   for (const pair of pairs) {
     const hasTagDelta = pair.beforeTagCount !== pair.afterTagCount;
-    const beforeText = trimEvidenceText(pair.fullBefore || pair.before);
-    const afterText = trimEvidenceText(pair.fullAfter || pair.after);
     const description = formatTextChange(pair.before, pair.after, pair.inlineDiff);
 
     changes.push({
@@ -121,20 +119,19 @@ function extractTextChanges(packet: PromptPacket): Change[] {
       type: "TEXT",
       categories: CHANGE_TYPE_CATEGORIES.TEXT,
       summary: summarizeTextPair(pair.before, pair.after),
-      ...(beforeText ? { beforeText } : {}),
-      ...(afterText ? { afterText } : {}),
+      evidence: description,
       description
     });
 
     if (hasTagDelta) {
+      const tagDesc = `${summarizeTagDelta(pair.beforeTagCount, pair.afterTagCount)}: ${description}`;
       changes.push({
         index: 0,
         type: "TAG",
         categories: CHANGE_TYPE_CATEGORIES.TAG,
         summary: summarizeTagDelta(pair.beforeTagCount, pair.afterTagCount),
-        ...(beforeText ? { beforeText } : {}),
-        ...(afterText ? { afterText } : {}),
-        description: `${summarizeTagDelta(pair.beforeTagCount, pair.afterTagCount)}: ${description}`
+        evidence: tagDesc,
+        description: tagDesc
       });
     }
   }
@@ -154,14 +151,15 @@ function extractTimestampChanges(packet: PromptPacket): Change[] {
     if (sample.startShiftMs !== 0) shifts.push(`start ${sample.startShiftMs > 0 ? "+" : ""}${sample.startShiftMs}ms`);
     if (sample.endShiftMs !== 0) shifts.push(`end ${sample.endShiftMs > 0 ? "+" : ""}${sample.endShiftMs}ms`);
     const shiftDesc = shifts.length > 0 ? shifts.join(", ") : `avg ${sample.avgShiftMs}ms`;
+    const desc = `Timing shift (${shiftDesc}) [${sample.quality}]: "${escapeQuotes(sample.refText)}"`;
 
     changes.push({
       index: 0,
       type: "TIMESTAMP",
       categories: CHANGE_TYPE_CATEGORIES.TIMESTAMP,
       summary: summarizeTimestampShift(sample),
-      ...(trimEvidenceText(sample.refText) ? { beforeText: trimEvidenceText(sample.refText) } : {}),
-      description: `Timing shift (${shiftDesc}) [${sample.quality}]: "${escapeQuotes(sample.refText)}"`
+      evidence: desc,
+      description: desc
     });
   }
 
@@ -191,18 +189,15 @@ function extractSegmentationChanges(packet: PromptPacket): Change[] {
     if (sample.insertions > 0) tokenChanges.push(`${sample.insertions} ins`);
     if (sample.deletions > 0) tokenChanges.push(`${sample.deletions} del`);
     const tokenSuffix = tokenChanges.length > 0 ? ` (${tokenChanges.join(", ")})` : "";
-
-    const beforeText = trimEvidenceText(sample.referenceText);
-    const afterText = trimEvidenceText(sample.hypothesisText);
+    const desc = `${relationship} [${severity}] ref=${refCount}->hyp=${hypCount}${tokenSuffix}: ${refText} -> ${hypText}`;
 
     changes.push({
       index: 0,
       type: "SEGMENTATION",
       categories: CHANGE_TYPE_CATEGORIES.SEGMENTATION,
       summary: summarizeSegmentationChange(sample),
-      ...(beforeText ? { beforeText } : {}),
-      ...(afterText ? { afterText } : {}),
-      description: `${relationship} [${severity}] ref=${refCount}->hyp=${hypCount}${tokenSuffix}: ${refText} -> ${hypText}`
+      evidence: desc,
+      description: desc
     });
   }
 
@@ -225,17 +220,15 @@ function extractWordDiffChanges(packet: PromptPacket): Change[] {
 
     const editSummary = edits.slice(0, 6).join("; ");
     const overflow = edits.length > 6 ? ` (+${edits.length - 6} more)` : "";
-    const beforeText = trimEvidenceText(sample.referenceText);
-    const afterText = trimEvidenceText(sample.hypothesisText);
+    const desc = `Word diff: ${editSummary}${overflow}`;
 
     changes.push({
       index: 0,
       type: "WORD_DIFF",
       categories: CHANGE_TYPE_CATEGORIES.WORD_DIFF,
       summary: summarizeWordDiff(sample.changedTokens),
-      ...(beforeText ? { beforeText } : {}),
-      ...(afterText ? { afterText } : {}),
-      description: `Word diff: ${editSummary}${overflow}`
+      evidence: desc,
+      description: desc
     });
   }
 

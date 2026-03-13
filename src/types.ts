@@ -238,8 +238,8 @@ export type Change = {
   type: ChangeType;
   categories: CategoryName[];
   summary: string;
-  beforeText?: string;
-  afterText?: string;
+  /** Compact evidence shown to the LLM (inline diff or structured summary) */
+  evidence: string;
   description: string;
 };
 
@@ -286,8 +286,8 @@ export type ReviewSessionCard = {
   changeIndex: number;
   type: ChangeType;
   summary: string;
-  beforeText?: string;
-  afterText?: string;
+  /** Compact evidence: the exact diff/summary the LLM classified */
+  evidence: string;
   categories: CategoryName[];
   matchedTemplateId: string | null;
   templateTitle: string | null;

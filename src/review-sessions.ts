@@ -98,8 +98,7 @@ function parseChange(value: unknown): Change | null {
     type: String(value.type || "TEXT") as Change["type"],
     categories,
     summary,
-    ...(asOptionalString(value.beforeText) ? { beforeText: asOptionalString(value.beforeText) } : {}),
-    ...(asOptionalString(value.afterText) ? { afterText: asOptionalString(value.afterText) } : {}),
+    evidence: String(value.evidence || description || "").trim(),
     description
   };
 }
@@ -120,8 +119,7 @@ function parseCard(value: unknown): ReviewSessionCard | null {
     changeIndex: Number(value.changeIndex) || 0,
     type: String(value.type || "TEXT") as ReviewSessionCard["type"],
     summary,
-    ...(asOptionalString(value.beforeText) ? { beforeText: asOptionalString(value.beforeText) } : {}),
-    ...(asOptionalString(value.afterText) ? { afterText: asOptionalString(value.afterText) } : {}),
+    evidence: String(value.evidence || value.beforeText || legacyDescription || "").trim(),
     categories,
     matchedTemplateId: asOptionalString(value.matchedTemplateId) || null,
     templateTitle: asOptionalString(value.templateTitle) || null,
@@ -152,11 +150,8 @@ function parseSession(value: unknown): ReviewSessionRecord {
               card.summary && card.summary !== "Change"
                 ? card.summary
                 : matchingChange?.summary || card.summary,
-            ...(!card.beforeText && matchingChange?.beforeText
-              ? { beforeText: matchingChange.beforeText }
-              : {}),
-            ...(!card.afterText && matchingChange?.afterText
-              ? { afterText: matchingChange.afterText }
+            ...(!card.evidence && matchingChange?.evidence
+              ? { evidence: matchingChange.evidence }
               : {})
           };
         })

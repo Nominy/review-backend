@@ -77,14 +77,8 @@ function normalizeProposal(raw: unknown): TemplateSuggestionProposal | null {
 }
 
 function describeCard(card: ReviewSessionCard): string {
-  if (card.beforeText && card.afterText) {
-    return `${card.summary} | Before: ${card.beforeText} | After: ${card.afterText}`;
-  }
-  if (card.afterText) {
-    return `${card.summary} | After: ${card.afterText}`;
-  }
-  if (card.beforeText) {
-    return `${card.summary} | Before: ${card.beforeText}`;
+  if (card.evidence) {
+    return `${card.summary} | Evidence: ${card.evidence}`;
   }
   return card.summary;
 }
@@ -103,8 +97,7 @@ function buildSessionCommentBundle(session: ReviewSessionRecord): Array<Record<s
       changeIndex: card.changeIndex,
       type: card.type,
       summary: card.summary,
-      ...(card.beforeText ? { beforeText: card.beforeText } : {}),
-      ...(card.afterText ? { afterText: card.afterText } : {}),
+      evidence: card.evidence,
       categories: card.categories,
       matchedTemplateId: card.matchedTemplateId,
       templateTitle: card.templateTitle,
