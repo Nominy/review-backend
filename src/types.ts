@@ -60,6 +60,18 @@ export type PromptTextDiff = {
   afterTagCount: number;
 };
 
+export type ChangeEvidence =
+  | {
+      kind: "text-diff";
+      before: string;
+      after: string;
+      inlineDiff?: string;
+    }
+  | {
+      kind: "raw";
+      text: string;
+    };
+
 export type PromptSegmentSample = {
   id: string;
   text: string;
@@ -240,6 +252,7 @@ export type Change = {
   summary: string;
   /** Compact evidence shown to the LLM (inline diff or structured summary) */
   evidence: string;
+  evidenceDetail?: ChangeEvidence;
   description: string;
 };
 
@@ -288,6 +301,7 @@ export type ReviewSessionCard = {
   summary: string;
   /** Compact evidence: the exact diff/summary the LLM classified */
   evidence: string;
+  evidenceDetail?: ChangeEvidence;
   categories: CategoryName[];
   matchedTemplateId: string | null;
   templateTitle: string | null;

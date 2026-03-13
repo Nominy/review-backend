@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import type {
   BabelDiffPayload,
+  ChangeEvidence,
   Change,
   CreateReviewSessionResponse,
   FeedbackItem,
@@ -55,6 +56,30 @@ function asOptionalString(value: unknown): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+function parseEvidenceDetail(value: unknown): ChangeEvidence | undefined {
+  if (!isObject(value)) {
+    return undefined;
+  }
+
+  if (value.kind === "text-diff") {
+    return {
+      kind: "text-diff",
+      before: String(value.before || ""),
+      after: String(value.after || ""),
+      ...(asOptionalString(value.inlineDiff) ? { inlineDiff: asOptionalString(value.inlineDiff) } : {})
+    };
+  }
+
+  if (value.kind === "raw") {
+    return {
+      kind: "raw",
+      text: String(value.text || "")
+    };
+  }
+
+  return undefined;
+}
+
 function parseComments(value: unknown): ReviewSessionComments {
   if (!isObject(value)) {
     return { sessionComment: "", cardComments: {} };
@@ -99,6 +124,7 @@ function parseChange(value: unknown): Change | null {
     categories,
     summary,
     evidence: String(value.evidence || description || "").trim(),
+    ...(parseEvidenceDetail(value.evidenceDetail) ? { evidenceDetail: parseEvidenceDetail(value.evidenceDetail) } : {}),
     description
   };
 }
@@ -120,6 +146,7 @@ function parseCard(value: unknown): ReviewSessionCard | null {
     type: String(value.type || "TEXT") as ReviewSessionCard["type"],
     summary,
     evidence: String(value.evidence || value.beforeText || legacyDescription || "").trim(),
+    ...(parseEvidenceDetail(value.evidenceDetail) ? { evidenceDetail: parseEvidenceDetail(value.evidenceDetail) } : {}),
     categories,
     matchedTemplateId: asOptionalString(value.matchedTemplateId) || null,
     templateTitle: asOptionalString(value.templateTitle) || null,
@@ -150,6 +177,9 @@ function parseSession(value: unknown): ReviewSessionRecord {
               card.summary && card.summary !== "Change"
                 ? card.summary
                 : matchingChange?.summary || card.summary,
+            ...(!card.evidenceDetail && matchingChange?.evidenceDetail
+              ? { evidenceDetail: matchingChange.evidenceDetail }
+              : {}),
             ...(!card.evidence && matchingChange?.evidence
               ? { evidence: matchingChange.evidence }
               : {})

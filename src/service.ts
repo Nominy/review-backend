@@ -289,6 +289,7 @@ function buildSessionCards(input: {
       type: change.type,
       summary: change.summary,
       evidence: change.evidence,
+      ...(change.evidenceDetail ? { evidenceDetail: change.evidenceDetail } : {}),
       categories: template ? [template.category] : change.categories,
       matchedTemplateId: template?.id || null,
       templateTitle: template?.title || null,

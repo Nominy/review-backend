@@ -120,6 +120,12 @@ function extractTextChanges(packet: PromptPacket): Change[] {
       categories: CHANGE_TYPE_CATEGORIES.TEXT,
       summary: summarizeTextPair(pair.before, pair.after),
       evidence: description,
+      evidenceDetail: {
+        kind: "text-diff",
+        before: pair.before,
+        after: pair.after,
+        ...(pair.inlineDiff ? { inlineDiff: pair.inlineDiff } : {})
+      },
       description
     });
 
@@ -131,6 +137,12 @@ function extractTextChanges(packet: PromptPacket): Change[] {
         categories: CHANGE_TYPE_CATEGORIES.TAG,
         summary: summarizeTagDelta(pair.beforeTagCount, pair.afterTagCount),
         evidence: tagDesc,
+        evidenceDetail: {
+          kind: "text-diff",
+          before: pair.before,
+          after: pair.after,
+          ...(pair.inlineDiff ? { inlineDiff: pair.inlineDiff } : {})
+        },
         description: tagDesc
       });
     }
@@ -159,6 +171,10 @@ function extractTimestampChanges(packet: PromptPacket): Change[] {
       categories: CHANGE_TYPE_CATEGORIES.TIMESTAMP,
       summary: summarizeTimestampShift(sample),
       evidence: desc,
+      evidenceDetail: {
+        kind: "raw",
+        text: desc
+      },
       description: desc
     });
   }
@@ -197,6 +213,11 @@ function extractSegmentationChanges(packet: PromptPacket): Change[] {
       categories: CHANGE_TYPE_CATEGORIES.SEGMENTATION,
       summary: summarizeSegmentationChange(sample),
       evidence: desc,
+      evidenceDetail: {
+        kind: "text-diff",
+        before: sample.referenceText,
+        after: sample.hypothesisText
+      },
       description: desc
     });
   }
@@ -228,6 +249,11 @@ function extractWordDiffChanges(packet: PromptPacket): Change[] {
       categories: CHANGE_TYPE_CATEGORIES.WORD_DIFF,
       summary: summarizeWordDiff(sample.changedTokens),
       evidence: desc,
+      evidenceDetail: {
+        kind: "text-diff",
+        before: sample.referenceText,
+        after: sample.hypothesisText
+      },
       description: desc
     });
   }
