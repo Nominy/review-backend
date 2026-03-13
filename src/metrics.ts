@@ -167,6 +167,8 @@ function buildLocalChangedPairs(
     changedPairs.push({
       before: clipText(beforeText, 220),
       after: clipText(afterText, 220),
+      ...(beforeText ? { fullBefore: beforeText } : {}),
+      ...(afterText ? { fullAfter: afterText } : {}),
       beforeTagCount: beforeTags.length,
       afterTagCount: afterTags.length
     });

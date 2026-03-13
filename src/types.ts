@@ -50,6 +50,8 @@ export type NormalizedState = {
 export type PromptTextDiff = {
   before: string;
   after: string;
+  fullBefore?: string;
+  fullAfter?: string;
   beforeTagCount: number;
   afterTagCount: number;
 };

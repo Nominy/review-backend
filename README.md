@@ -38,8 +38,7 @@ Notes:
 - `OPENROUTER_API_KEY` is required when `OPENROUTER_TEST_MODE=false`.
 - `OPENROUTER_MODEL` is optional (defaults to `openai/gpt-oss-120b`).
 - `OPENROUTER_TEST_MODE` is optional (`false` by default). Set `true` to skip OpenRouter and return deterministic default template-backed feedback.
-- `REVIEW_PAIR_LOG_PATH` is optional (defaults to `logs/review-text-pairs.jsonl`).
-- `ANALYTICS_LOG_PATH` is optional (defaults to `logs/review-analytics.jsonl`).
+- `ANALYTICS_LOG_PATH` is optional (defaults to `logs/pm2/review-backend.out.log`) and is used by the history API to read structured logs captured by the process manager.
 - `REVIEW_SESSIONS_DIR` is optional (defaults to `data/review-sessions`).
 - `PENDING_TEMPLATE_PROPOSAL_PATH` is optional (defaults to `data/prompt-lab/pending-template-proposals.json`).
 - `HOST` is optional (defaults to `127.0.0.1`).
@@ -52,13 +51,13 @@ Notes:
   - when both are set, the admin UI is enabled at `/templates-lab`
   - the whole section uses HTTP Basic Auth
 
-Each `POST /api/review/generate` call appends one JSON line with:
+Each `POST /api/review/generate` call emits one JSON line to stdout with:
 - `reviewActionId`
 - `originalText` (joined from `original.annotations[].content`)
 - `reviewedText` (joined from `current.annotations[].content`)
 - `loggedAt`, `originalCapturedAt`, `currentCapturedAt`
 
-Each analytics event appends one JSON line to `ANALYTICS_LOG_PATH` with:
+Each analytics event emits one JSON line to stdout with:
 - event type (`review_generate`, `submit_transcript_review_action`, and the interactive-session lifecycle events)
 - full `original` and `current` normalized states
 - extracted `originalText` and `currentText`
@@ -66,6 +65,8 @@ Each analytics event appends one JSON line to `ANALYTICS_LOG_PATH` with:
 - `aiReview` payload (when available)
 - `inputBoxes` snapshot (user correction fields at submit time)
 - metadata (source/status/timestamps)
+
+The backend no longer appends those logs directly to files. In production, capture stdout/stderr with PM2 and let PM2 rotate the files.
 
 Default URL: `http://127.0.0.1:3001`
 
@@ -77,11 +78,26 @@ Default URL: `http://127.0.0.1:3001`
    - `PORT=3001`
    - `PUBLIC_BASE_URL=https://reviewgen.ovh`
    - `CORS_ALLOWED_ORIGINS=https://dashboard.babel.audio`
+   - `ANALYTICS_LOG_PATH=logs/pm2/review-backend.out.log`
    - you can start from `.env.production.example`
 3. Put reverse proxy in front of backend:
    - Caddy example: `deploy/Caddyfile`
    - Nginx example: `deploy/nginx.reviewgen.ovh.conf`
 4. Proxy `https://reviewgen.ovh` -> `http://127.0.0.1:3001`.
+
+Recommended process manager setup:
+
+```bash
+npm install -g pm2
+pm2 start ecosystem.config.cjs
+pm2 save
+pm2 install pm2-logrotate
+pm2 set pm2-logrotate:max_size 100M
+pm2 set pm2-logrotate:retain 10
+pm2 set pm2-logrotate:compress true
+```
+
+The included [ecosystem.config.cjs](/C:/Users/User/Desktop/dev/babel/reviewer/review-backend/ecosystem.config.cjs) writes stdout to `logs/pm2/review-backend.out.log` and stderr to `logs/pm2/review-backend.error.log`. Point `ANALYTICS_LOG_PATH` at the stdout file if you want `/api/review-history` to keep working.
 
 After this, extension can call `https://reviewgen.ovh/api/review/generate`.
 
@@ -138,7 +154,9 @@ Rules:
 
 ## Protected History API
 
-History browsing reads from `ANALYTICS_LOG_PATH` and is protected with the same HTTP Basic Auth credentials as Templates Lab.
+History browsing reads structured analytics entries from `ANALYTICS_LOG_PATH` and is protected with the same HTTP Basic Auth credentials as Templates Lab.
+
+With the default PM2 setup, `ANALYTICS_LOG_PATH` should point to the PM2 stdout log file because the application now writes analytics to stdout instead of appending directly to a dedicated file.
 
 Requirements:
 - `TEMPLATES_LAB_USERNAME`

@@ -1,8 +1,8 @@
-import { appendFile, mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
 import type { AnalyticsEventType, BabelDiffPayload, NormalizedState, PreparedPayload } from "./types";
+import { writeStructuredLog } from "./structured-logger";
 
 type ReviewAnalyticsLogEntry = {
+  logType: "review_analytics";
   loggedAt: string;
   eventType: AnalyticsEventType;
   reviewActionId: string;
@@ -88,11 +88,11 @@ export async function logReviewAnalytics(input: {
   aiReview?: unknown;
   inputBoxes?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
-  logPath: string;
 }): Promise<void> {
   const templateMetadata = extractTemplateMetadata(input.aiReview);
 
   const entry: ReviewAnalyticsLogEntry = {
+    logType: "review_analytics",
     loggedAt: new Date().toISOString(),
     eventType: input.eventType,
     reviewActionId: input.reviewActionId,
@@ -118,6 +118,5 @@ export async function logReviewAnalytics(input: {
     metadata: input.metadata ?? {}
   };
 
-  await mkdir(dirname(input.logPath), { recursive: true });
-  await appendFile(input.logPath, `${JSON.stringify(entry)}\n`, "utf8");
+  writeStructuredLog(entry);
 }

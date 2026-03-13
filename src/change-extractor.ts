@@ -108,8 +108,8 @@ function extractTextChanges(packet: PromptPacket): Change[] {
 
   for (const pair of pairs) {
     const hasTagDelta = pair.beforeTagCount !== pair.afterTagCount;
-    const beforeText = trimEvidenceText(pair.before);
-    const afterText = trimEvidenceText(pair.after);
+    const beforeText = trimEvidenceText(pair.fullBefore || pair.before);
+    const afterText = trimEvidenceText(pair.fullAfter || pair.after);
 
     changes.push({
       index: 0,

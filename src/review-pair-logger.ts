@@ -1,8 +1,8 @@
-import { appendFile, mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
 import type { NormalizedState } from "./types";
+import { writeStructuredLog } from "./structured-logger";
 
 type ReviewPairLogEntry = {
+  logType: "review_pair";
   loggedAt: string;
   reviewActionId: string;
   originalCapturedAt: string;
@@ -30,9 +30,9 @@ export async function logReviewTextPair(input: {
   reviewActionId: string;
   original: NormalizedState;
   current: NormalizedState;
-  logPath: string;
 }): Promise<void> {
   const entry: ReviewPairLogEntry = {
+    logType: "review_pair",
     loggedAt: new Date().toISOString(),
     reviewActionId: input.reviewActionId,
     originalCapturedAt: input.original.capturedAt || "",
@@ -41,6 +41,5 @@ export async function logReviewTextPair(input: {
     reviewedText: stateToText(input.current)
   };
 
-  await mkdir(dirname(input.logPath), { recursive: true });
-  await appendFile(input.logPath, `${JSON.stringify(entry)}\n`, "utf8");
+  writeStructuredLog(entry);
 }

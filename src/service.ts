@@ -80,8 +80,7 @@ async function safeLogAnalytics(input: {
       babelDiff: input.babelDiff,
       aiReview: input.aiReview,
       inputBoxes: input.inputBoxes,
-      metadata: input.metadata,
-      logPath: config.analyticsLogPath
+      metadata: input.metadata
     });
   } catch (error) {
     console.error(
@@ -420,8 +419,7 @@ export async function generateFeedback(input: {
     await logReviewTextPair({
       reviewActionId: input.reviewActionId,
       original: input.original,
-      current: input.current,
-      logPath: config.reviewPairLogPath
+      current: input.current
     });
   } catch (error) {
     console.error(
