@@ -20,3 +20,4 @@ Thumbs.db
 
 # Local artifact accidentally generated in this workspace.
 NUL
+data/
