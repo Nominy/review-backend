@@ -10,7 +10,7 @@ import { buildBabelDiffPromptPacket } from "./babel-diff";
 import { alignSegments, diffWords } from "./text-diff";
 
 export const METRICS_VERSION = "v6";
-export const PROMPT_VERSION = "v11";
+export const PROMPT_VERSION = "v12";
 
 function normalizeWhitespace(text: string): string {
   return String(text || "").replace(/\s+/g, " ").trim();
@@ -160,16 +160,31 @@ function buildLocalChangedPairs(
     if (textChanged) localTextChangeCount += 1;
     if (tagsChanged) localTagChangeCount += 1;
 
-    // Compute focused word-level diff
+    // Split a long segment-level edit into localized snippet groups so the
+    // prompt only carries the words around each actual change.
     const wordDiff = textChanged ? diffWords(beforeText, afterText) : null;
+    const snippets = wordDiff?.snippets?.length
+      ? wordDiff.snippets
+      : [{
+          before: beforeText,
+          after: afterText,
+          inline: wordDiff?.inline || "",
+          editCount: wordDiff?.editCount || 0
+        }];
 
-    changedPairs.push({
-      before: beforeText,
-      after: afterText,
-      ...(wordDiff ? { inlineDiff: wordDiff.inline, editCount: wordDiff.editCount } : {}),
-      beforeTagCount: beforeTags.length,
-      afterTagCount: afterTags.length
-    });
+    for (const snippet of snippets) {
+      const snippetBeforeTags = extractTagTokens(snippet.before);
+      const snippetAfterTags = extractTagTokens(snippet.after);
+
+      changedPairs.push({
+        before: snippet.before,
+        after: snippet.after,
+        ...(snippet.inline ? { inlineDiff: snippet.inline } : {}),
+        ...(snippet.editCount ? { editCount: snippet.editCount } : {}),
+        beforeTagCount: snippetBeforeTags.length,
+        afterTagCount: snippetAfterTags.length
+      });
+    }
   }
 
   return {

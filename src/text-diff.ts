@@ -20,6 +20,13 @@ export type InlineDiff = {
   edits: WordEdit[];
   /** number of non-equal edits */
   editCount: number;
+  /** localized before/after snippets for each edit cluster */
+  snippets: Array<{
+    before: string;
+    after: string;
+    inline: string;
+    editCount: number;
+  }>;
 };
 
 export type AlignedPair = {
@@ -53,7 +60,7 @@ export function diffWords(
   const rawAfter = normalize(after);
 
   if (rawBefore === rawAfter) {
-    return { inline: "(no change)", edits: [], editCount: 0 };
+    return { inline: "(no change)", edits: [], editCount: 0, snippets: [] };
   }
 
   // Run char-level diff, then clean up to word boundaries
@@ -68,10 +75,12 @@ export function diffWords(
 
   const editCount = edits.filter((e) => e.op !== "equal").length;
 
-  // Build compact inline representation with limited context
-  const inline = buildInline(edits, contextWords);
+  const snippets = buildSnippets(edits, contextWords);
+  const inline = snippets.length > 0
+    ? snippets.map((snippet) => snippet.inline).join(" | ")
+    : "(no change)";
 
-  return { inline, edits, editCount };
+  return { inline, edits, editCount, snippets };
 }
 
 function normalize(text: string): string {
@@ -83,79 +92,141 @@ function normalize(text: string): string {
  *
  * Example output: "...unchanged [-removed+added] unchanged..."
  */
-function buildInline(edits: WordEdit[], contextWords: number): string {
-  if (edits.length === 0) return "(no change)";
-
-  // Find the indices of non-equal edits
-  const editIndices: number[] = [];
-  for (let i = 0; i < edits.length; i++) {
-    if (edits[i].op !== "equal") editIndices.push(i);
+function buildSnippets(
+  edits: WordEdit[],
+  contextWords: number
+): Array<{
+  before: string;
+  after: string;
+  inline: string;
+  editCount: number;
+}> {
+  const groups = groupEditRanges(edits, contextWords);
+  if (groups.length === 0) {
+    return [];
   }
 
-  if (editIndices.length === 0) return "(no change)";
+  return groups.map((group) => {
+    const beforeContext = collectContextTokens(edits, group.start, "before", contextWords);
+    const afterContext = collectContextTokens(edits, group.end, "after", contextWords);
+    const beforeCore = collectGroupTokens(edits, group.start, group.end, "before");
+    const afterCore = collectGroupTokens(edits, group.start, group.end, "after");
+    const inline = buildInlineGroup(edits, group.start, group.end, contextWords);
 
-  // Group consecutive edit indices into ranges
+    return {
+      before: normalizeSnippetTokens([...beforeContext, ...beforeCore, ...afterContext]),
+      after: normalizeSnippetTokens([...beforeContext, ...afterCore, ...afterContext]),
+      inline,
+      editCount: countEditsInRange(edits, group.start, group.end)
+    };
+  });
+}
+
+function groupEditRanges(
+  edits: WordEdit[],
+  contextWords: number
+): Array<{ start: number; end: number }> {
+  const editIndices: number[] = [];
+  for (let i = 0; i < edits.length; i++) {
+    if (edits[i].op !== "equal") {
+      editIndices.push(i);
+    }
+  }
+
+  if (editIndices.length === 0) {
+    return [];
+  }
+
   const groups: Array<{ start: number; end: number }> = [];
   let groupStart = editIndices[0];
   let groupEnd = editIndices[0];
 
   for (let i = 1; i < editIndices.length; i++) {
-    if (editIndices[i] <= groupEnd + 2) {
-      // consecutive or separated by one equal chunk -- keep in same group
-      groupEnd = editIndices[i];
-    } else {
-      groups.push({ start: groupStart, end: groupEnd });
-      groupStart = editIndices[i];
-      groupEnd = editIndices[i];
+    const nextIndex = editIndices[i];
+    const bridgeWords = countEqualWordsBetween(edits, groupEnd, nextIndex);
+    if (bridgeWords <= contextWords) {
+      groupEnd = nextIndex;
+      continue;
     }
+
+    groups.push({ start: groupStart, end: groupEnd });
+    groupStart = nextIndex;
+    groupEnd = nextIndex;
   }
+
   groups.push({ start: groupStart, end: groupEnd });
-
-  // Render each group with context
-  const parts: string[] = [];
-  for (const group of groups) {
-    // Grab context before
-    const beforeContext = collectContext(edits, group.start, "before", contextWords);
-    // Grab context after
-    const afterContext = collectContext(edits, group.end, "after", contextWords);
-
-    // Render the edit region
-    const editParts: string[] = [];
-    for (let i = group.start; i <= group.end; i++) {
-      const edit = edits[i];
-      if (edit.op === "equal") {
-        editParts.push(edit.text);
-      } else if (edit.op === "delete") {
-        editParts.push(`[-${edit.text.trim()}]`);
-      } else {
-        editParts.push(`[+${edit.text.trim()}]`);
-      }
-    }
-
-    const chunk = [
-      beforeContext ? `...${beforeContext} ` : "",
-      editParts.join(""),
-      afterContext ? ` ${afterContext}...` : ""
-    ].join("");
-
-    parts.push(chunk);
-  }
-
-  return parts.join(" | ");
+  return groups;
 }
 
-function collectContext(
+function countEqualWordsBetween(edits: WordEdit[], left: number, right: number): number {
+  let words = 0;
+  for (let i = left + 1; i < right; i++) {
+    if (edits[i].op !== "equal") {
+      continue;
+    }
+    words += toTokens(edits[i].text).length;
+  }
+  return words;
+}
+
+function countEditsInRange(edits: WordEdit[], start: number, end: number): number {
+  let count = 0;
+  for (let i = start; i <= end; i++) {
+    if (edits[i].op !== "equal") {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function buildInlineGroup(
+  edits: WordEdit[],
+  start: number,
+  end: number,
+  contextWords: number
+): string {
+  const beforeContext = normalizeSnippetTokens(
+    collectContextTokens(edits, start, "before", contextWords)
+  );
+  const afterContext = normalizeSnippetTokens(
+    collectContextTokens(edits, end, "after", contextWords)
+  );
+  const editParts: string[] = [];
+
+  for (let i = start; i <= end; i++) {
+    const edit = edits[i];
+    const text = edit.text.trim();
+    if (!text) {
+      continue;
+    }
+    if (edit.op === "equal") {
+      editParts.push(text);
+    } else if (edit.op === "delete") {
+      editParts.push(`[-${text}]`);
+    } else {
+      editParts.push(`[+${text}]`);
+    }
+  }
+
+  return [
+    beforeContext ? `...${beforeContext} ` : "",
+    editParts.join(" "),
+    afterContext ? ` ${afterContext}...` : ""
+  ].join("").replace(/\s+/g, " ").trim();
+}
+
+function collectContextTokens(
   edits: WordEdit[],
   editIdx: number,
   direction: "before" | "after",
   maxWords: number
-): string {
+): string[] {
   const words: string[] = [];
 
   if (direction === "before") {
     for (let i = editIdx - 1; i >= 0 && words.length < maxWords; i--) {
       if (edits[i].op !== "equal") continue;
-      const tokens = edits[i].text.trim().split(/\s+/).filter(Boolean);
+      const tokens = toTokens(edits[i].text);
       for (let j = tokens.length - 1; j >= 0 && words.length < maxWords; j--) {
         words.unshift(tokens[j]);
       }
@@ -163,14 +234,46 @@ function collectContext(
   } else {
     for (let i = editIdx + 1; i < edits.length && words.length < maxWords; i++) {
       if (edits[i].op !== "equal") continue;
-      const tokens = edits[i].text.trim().split(/\s+/).filter(Boolean);
+      const tokens = toTokens(edits[i].text);
       for (let j = 0; j < tokens.length && words.length < maxWords; j++) {
         words.push(tokens[j]);
       }
     }
   }
 
-  return words.join(" ");
+  return words;
+}
+
+function collectGroupTokens(
+  edits: WordEdit[],
+  start: number,
+  end: number,
+  side: "before" | "after"
+): string[] {
+  const tokens: string[] = [];
+
+  for (let i = start; i <= end; i++) {
+    const edit = edits[i];
+    if (side === "before" && edit.op === "insert") {
+      continue;
+    }
+    if (side === "after" && edit.op === "delete") {
+      continue;
+    }
+    tokens.push(...toTokens(edit.text));
+  }
+
+  return tokens;
+}
+
+function normalizeSnippetTokens(tokens: string[]): string {
+  return normalize(tokens.join(" "))
+    .replace(/\s+([,.;:!?)\]\}»])/g, "$1")
+    .replace(/([(\[{«])\s+/g, "$1");
+}
+
+function toTokens(text: string): string[] {
+  return String(text || "").trim().split(/\s+/).filter(Boolean);
 }
 
 /* ------------------------------------------------------------------ */

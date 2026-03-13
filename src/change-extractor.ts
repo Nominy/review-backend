@@ -36,11 +36,7 @@ function trimEvidenceText(text: string): string | undefined {
   return normalized ? normalized : undefined;
 }
 
-function formatTextChange(before: string, after: string, inlineDiff?: string): string {
-  // Prefer focused inline diff when available
-  if (inlineDiff) {
-    return inlineDiff;
-  }
+function formatTextChange(before: string, after: string): string {
   return `"${escapeQuotes(before)}" -> "${escapeQuotes(after)}"`;
 }
 
@@ -112,7 +108,7 @@ function extractTextChanges(packet: PromptPacket): Change[] {
 
   for (const pair of pairs) {
     const hasTagDelta = pair.beforeTagCount !== pair.afterTagCount;
-    const description = formatTextChange(pair.before, pair.after, pair.inlineDiff);
+    const description = formatTextChange(pair.before, pair.after);
 
     changes.push({
       index: 0,
