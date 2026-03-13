@@ -290,7 +290,7 @@ function buildSessionCards(input: {
       summary: change.summary,
       ...(change.beforeText ? { beforeText: change.beforeText } : {}),
       ...(change.afterText ? { afterText: change.afterText } : {}),
-      categories: change.categories,
+      categories: template ? [template.category] : change.categories,
       matchedTemplateId: template?.id || null,
       templateTitle: template?.title || null,
       templateDescription: template?.description || null,
