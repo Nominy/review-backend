@@ -56,8 +56,6 @@ export type PromptTextDiff = {
   inlineDiff?: string;
   /** Number of discrete word-level edits */
   editCount?: number;
-  beforeTagCount: number;
-  afterTagCount: number;
 };
 
 export type ChangeEvidence =
@@ -92,17 +90,12 @@ export type PromptPacket = {
     currentWords: number;
     segmentCountDelta: number;
     localTextChangeCount: number;
-    localTagChangeCount: number;
     hasBabelDiff: boolean;
   };
   localTextEvidence: {
     changedPairs: PromptTextDiff[];
-    originalTagSamples: PromptSegmentSample[];
-    currentTagSamples: PromptSegmentSample[];
     originalOnlySamples: PromptSegmentSample[];
     currentOnlySamples: PromptSegmentSample[];
-    originalTagSegmentCount: number;
-    currentTagSegmentCount: number;
   };
   babelDiff?: {
     referenceReviewActionId: string;
@@ -243,7 +236,7 @@ export type TemplateSelectionResponse = {
   findings: string[];
 };
 
-export type ChangeType = "TEXT" | "TIMESTAMP" | "SEGMENTATION" | "WORD_DIFF" | "TAG";
+export type ChangeType = "TEXT" | "TIMESTAMP" | "SEGMENTATION" | "WORD_DIFF";
 
 export type Change = {
   index: number;

@@ -12,15 +12,13 @@ import type { CategoryName, Change, ChangeType, PromptPacket } from "./types";
  *   TIMESTAMP    -> Timestamp Accuracy
  *   SEGMENTATION -> Segmentation
  *   WORD_DIFF    -> legacy only; excluded from new extraction
- *   TAG          -> Tags & Emphasis
  */
 
 export const CHANGE_TYPE_CATEGORIES: Record<ChangeType, CategoryName[]> = {
   TEXT: ["Word Accuracy", "Punctuation & Formatting", "Tags & Emphasis"],
   TIMESTAMP: ["Timestamp Accuracy"],
   SEGMENTATION: ["Segmentation"],
-  WORD_DIFF: [],
-  TAG: ["Tags & Emphasis"]
+  WORD_DIFF: []
 };
 
 function escapeQuotes(text: string): string {
@@ -59,13 +57,6 @@ function summarizeTextPair(before: string, after: string): string {
   return `Text updated: ${afterNormalized}`;
 }
 
-function summarizeTagDelta(beforeCount: number, afterCount: number): string {
-  const delta = Math.abs(afterCount - beforeCount);
-  const label = delta === 1 ? "tag" : "tags";
-  const direction = afterCount > beforeCount ? "added" : "removed";
-  return `${delta} ${label} ${direction}`;
-}
-
 function summarizeTimestampShift(sample: {
   startShiftMs: number;
   endShiftMs: number;
@@ -97,7 +88,6 @@ function extractTextChanges(packet: PromptPacket): Change[] {
   const pairs = packet.localTextEvidence.changedPairs;
 
   for (const pair of pairs) {
-    const hasTagDelta = pair.beforeTagCount !== pair.afterTagCount;
     const description = formatTextChange(pair.before, pair.after);
 
     changes.push({
@@ -114,24 +104,6 @@ function extractTextChanges(packet: PromptPacket): Change[] {
       },
       description
     });
-
-    if (hasTagDelta) {
-      const tagDesc = `${summarizeTagDelta(pair.beforeTagCount, pair.afterTagCount)}: ${description}`;
-      changes.push({
-        index: 0,
-        type: "TAG",
-        categories: CHANGE_TYPE_CATEGORIES.TAG,
-        summary: summarizeTagDelta(pair.beforeTagCount, pair.afterTagCount),
-        evidence: tagDesc,
-        evidenceDetail: {
-          kind: "text-diff",
-          before: pair.before,
-          after: pair.after,
-          ...(pair.inlineDiff ? { inlineDiff: pair.inlineDiff } : {})
-        },
-        description: tagDesc
-      });
-    }
   }
 
   return changes;

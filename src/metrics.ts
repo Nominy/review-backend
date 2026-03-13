@@ -9,8 +9,8 @@ import type {
 import { buildBabelDiffPromptPacket } from "./babel-diff";
 import { alignSegments, diffWords } from "./text-diff";
 
-export const METRICS_VERSION = "v6";
-export const PROMPT_VERSION = "v13";
+export const METRICS_VERSION = "v7";
+export const PROMPT_VERSION = "v14";
 
 function normalizeWhitespace(text: string): string {
   return String(text || "").replace(/\s+/g, " ").trim();
@@ -62,7 +62,6 @@ function isUsefulLocalChangedPair(input: {
   after: Annotation;
   beforeText: string;
   afterText: string;
-  tagsChanged: boolean;
 }): boolean {
   const beforeWordCount = countWords(stripTags(input.beforeText));
   const afterWordCount = countWords(stripTags(input.afterText));
@@ -71,10 +70,6 @@ function isUsefulLocalChangedPair(input: {
   const wordRatio = longer / shorter;
   const overlap = overlapMs(input.before, input.after);
   const sharedTokenRatio = tokenOverlapRatio(input.beforeText, input.afterText);
-
-  if (input.tagsChanged && (overlap >= 120 || sharedTokenRatio >= 0.45)) {
-    return true;
-  }
 
   if (overlap < 120) {
     return false;
@@ -100,26 +95,18 @@ function toSegmentSample(annotation: Annotation): PromptSegmentSample {
   };
 }
 
-function extractTagTokens(text: string): string[] {
-  const value = String(text || "");
-  const matches = value.match(/<[^>]+>|\[[^\]]+\]|\{[^}]+\}/g);
-  return matches ? matches.map((item) => normalizeWhitespace(item)).filter(Boolean) : [];
-}
-
 function buildLocalChangedPairs(
   original: Annotation[],
   current: Annotation[]
 ): {
   changedPairs: PromptTextDiff[];
   localTextChangeCount: number;
-  localTagChangeCount: number;
   deletedSegments: Annotation[];
   insertedSegments: Annotation[];
 } {
   const aligned = alignSegments(original, current);
   const changedPairs: PromptTextDiff[] = [];
   let localTextChangeCount = 0;
-  let localTagChangeCount = 0;
   const deletedSegments: Annotation[] = [];
   const insertedSegments: Annotation[] = [];
 
@@ -135,15 +122,13 @@ function buildLocalChangedPairs(
       continue;
     }
 
-    // matched pair — check for text/tag changes
+    // matched pair — keep only actual text diffs and let the diff output
+    // carry any inline tag edits naturally inside the text evidence.
     const beforeText = normalizeWhitespace(pair.before!.content || "");
     const afterText = normalizeWhitespace(pair.after!.content || "");
-    const beforeTags = extractTagTokens(pair.before!.content || "");
-    const afterTags = extractTagTokens(pair.after!.content || "");
     const textChanged = beforeText !== afterText;
-    const tagsChanged = beforeTags.join(" | ") !== afterTags.join(" | ");
 
-    if (!textChanged && !tagsChanged) {
+    if (!textChanged) {
       continue;
     }
 
@@ -151,14 +136,12 @@ function buildLocalChangedPairs(
       before: pair.before!,
       after: pair.after!,
       beforeText,
-      afterText,
-      tagsChanged
+      afterText
     })) {
       continue;
     }
 
     if (textChanged) localTextChangeCount += 1;
-    if (tagsChanged) localTagChangeCount += 1;
 
     // Split a long segment-level edit into localized snippet groups so the
     // prompt only carries the words around each actual change.
@@ -173,16 +156,11 @@ function buildLocalChangedPairs(
         }];
 
     for (const snippet of snippets) {
-      const snippetBeforeTags = extractTagTokens(snippet.before);
-      const snippetAfterTags = extractTagTokens(snippet.after);
-
       changedPairs.push({
         before: snippet.before,
         after: snippet.after,
         ...(snippet.inline ? { inlineDiff: snippet.inline } : {}),
-        ...(snippet.editCount ? { editCount: snippet.editCount } : {}),
-        beforeTagCount: snippetBeforeTags.length,
-        afterTagCount: snippetAfterTags.length
+        ...(snippet.editCount ? { editCount: snippet.editCount } : {})
       });
     }
   }
@@ -190,20 +168,8 @@ function buildLocalChangedPairs(
   return {
     changedPairs: changedPairs.slice(0, 24),
     localTextChangeCount,
-    localTagChangeCount,
     deletedSegments: deletedSegments.slice(0, 12),
     insertedSegments: insertedSegments.slice(0, 12)
-  };
-}
-
-function buildTagSamples(annotations: Annotation[]): {
-  tagSamples: PromptSegmentSample[];
-  tagSegmentCount: number;
-} {
-  const withTags = annotations.filter((annotation) => extractTagTokens(annotation.content || "").length > 0);
-  return {
-    tagSamples: withTags.slice(0, 12).map(toSegmentSample),
-    tagSegmentCount: withTags.length
   };
 }
 
@@ -230,12 +196,9 @@ export function computeReviewMetrics(
   const {
     changedPairs,
     localTextChangeCount,
-    localTagChangeCount,
     deletedSegments,
     insertedSegments
   } = buildLocalChangedPairs(oldAnnotations, newAnnotations);
-  const originalTags = buildTagSamples(oldAnnotations);
-  const currentTags = buildTagSamples(newAnnotations);
   const originalOnlySamples = deletedSegments.map(toSegmentSample);
   const currentOnlySamples = insertedSegments.map(toSegmentSample);
 
@@ -252,17 +215,12 @@ export function computeReviewMetrics(
       currentWords,
       segmentCountDelta: newAnnotations.length - oldAnnotations.length,
       localTextChangeCount,
-      localTagChangeCount,
       hasBabelDiff: !!babelDiffPacket
     },
     localTextEvidence: {
       changedPairs,
-      originalTagSamples: originalTags.tagSamples,
-      currentTagSamples: currentTags.tagSamples,
       originalOnlySamples,
-      currentOnlySamples,
-      originalTagSegmentCount: originalTags.tagSegmentCount,
-      currentTagSegmentCount: currentTags.tagSegmentCount
+      currentOnlySamples
     },
     ...(babelDiffPacket ? { babelDiff: babelDiffPacket } : {})
   };
@@ -272,12 +230,8 @@ export function computeReviewMetrics(
     overview: promptPacket.overview,
     localTextEvidence: {
       changedPairs: promptPacket.localTextEvidence.changedPairs,
-      originalTagSamples: promptPacket.localTextEvidence.originalTagSamples,
-      currentTagSamples: promptPacket.localTextEvidence.currentTagSamples,
       originalOnlySamples: promptPacket.localTextEvidence.originalOnlySamples,
-      currentOnlySamples: promptPacket.localTextEvidence.currentOnlySamples,
-      originalTagSegmentCount: promptPacket.localTextEvidence.originalTagSegmentCount,
-      currentTagSegmentCount: promptPacket.localTextEvidence.currentTagSegmentCount
+      currentOnlySamples: promptPacket.localTextEvidence.currentOnlySamples
     },
     ...(babelDiffPacket ? { babelDiff: babelDiffPacket } : {})
   };
@@ -286,18 +240,15 @@ export function computeReviewMetrics(
     original: {
       annotations: oldAnnotations.length,
       words: originalWords,
-      lintErrors: Array.isArray(original.lintErrors) ? original.lintErrors.length : 0,
-      tagSegments: originalTags.tagSegmentCount
+      lintErrors: Array.isArray(original.lintErrors) ? original.lintErrors.length : 0
     },
     current: {
       annotations: newAnnotations.length,
       words: currentWords,
-      lintErrors: Array.isArray(current.lintErrors) ? current.lintErrors.length : 0,
-      tagSegments: currentTags.tagSegmentCount
+      lintErrors: Array.isArray(current.lintErrors) ? current.lintErrors.length : 0
     },
     changes: {
       localTextChangeCount,
-      localTagChangeCount,
       segmentCountDelta: newAnnotations.length - oldAnnotations.length,
       previewBefore: oldText,
       previewAfter: newText,

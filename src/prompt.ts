@@ -29,7 +29,7 @@ function buildSystemPrompt(): string {
     "   dedicated tag/service-markup templates unless there is separate independent",
     "   punctuation evidence.",
     "7. For segmentation changes, use the relationship and severity information provided.",
-    "8. For tag changes, examine tag additions/removals specifically.",
+    "8. Treat inline tags/service markup as part of the diff text itself.",
     "",
     "Output rules:",
     "- Return strict JSON only. No markdown. No prose outside JSON.",
