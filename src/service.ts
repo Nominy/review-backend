@@ -634,15 +634,17 @@ export async function updateInteractiveReviewSessionComments(input: {
 export async function updateInteractiveReviewSessionCardTemplateMatch(input: {
   sessionId: string;
   cardId: string;
-  templateId?: string | null;
+  templateId: string;
 }): Promise<CreateReviewSessionResponse> {
   const requestedTemplateId = String(input.templateId || "").trim();
   const registry = getTemplateRegistry();
-  const template = requestedTemplateId
-    ? registry.templatesById.get(requestedTemplateId) || null
-    : null;
+  const template = registry.templatesById.get(requestedTemplateId) || null;
 
-  if (requestedTemplateId && !template) {
+  if (!requestedTemplateId) {
+    throw new Error("templateId is required.");
+  }
+
+  if (!template) {
     throw new Error(`Template ${requestedTemplateId} not found.`);
   }
 
@@ -654,9 +656,6 @@ export async function updateInteractiveReviewSessionCardTemplateMatch(input: {
       }
 
       cardFound = true;
-      if (!template) {
-        return clearTemplateMatchFromCard(card);
-      }
       return applyTemplateMatchToCard({
         card,
         reviewActionId: current.reviewActionId,
@@ -683,6 +682,45 @@ export async function updateInteractiveReviewSessionCardTemplateMatch(input: {
       cardId: input.cardId,
       templateId: requestedTemplateId || null,
       matchAction: requestedTemplateId ? "manual_select" : "manual_clear"
+    }
+  });
+
+  return toSessionResponse(session);
+}
+
+export async function clearInteractiveReviewSessionCardTemplateMatch(input: {
+  sessionId: string;
+  cardId: string;
+}): Promise<CreateReviewSessionResponse> {
+  const session = await updateReviewSession(config.reviewSessionsDir, input.sessionId, (current) => {
+    let cardFound = false;
+    const cards = current.cards.map((card) => {
+      if (card.id !== input.cardId) {
+        return card;
+      }
+
+      cardFound = true;
+      return clearTemplateMatchFromCard(card);
+    });
+
+    if (!cardFound) {
+      throw new Error("Review card not found.");
+    }
+
+    return recalculateSessionDerivedState(current, cards);
+  });
+
+  await safeLogAnalytics({
+    eventType: "review_card_commented",
+    reviewActionId: session.reviewActionId,
+    original: session.original,
+    current: session.current,
+    babelDiff: session.babelDiff,
+    prepared: session.prepared,
+    metadata: {
+      sessionId: session.sessionId,
+      cardId: input.cardId,
+      matchAction: "manual_clear"
     }
   });
 

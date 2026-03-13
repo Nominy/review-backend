@@ -4,6 +4,7 @@ import { cors } from "@elysiajs/cors";
 import {
   buildPreparedPayload,
   createInteractiveReviewSession,
+  clearInteractiveReviewSessionCardTemplateMatch,
   decideInteractiveTemplateSuggestion,
   finalizeInteractiveReviewSession,
   generateFeedback,
@@ -45,7 +46,7 @@ type ReviewSessionCommentsBody = {
 };
 
 type ReviewSessionTemplateMatchBody = {
-  templateId?: string | null;
+  templateId: string;
 };
 
 type TemplateSuggestionDecisionBody = {
@@ -286,11 +287,11 @@ function assertReviewSessionTemplateMatchBody(
     throw new Error("Body must be an object.");
   }
   if (
-    body.templateId !== undefined &&
-    body.templateId !== null &&
-    typeof body.templateId !== "string"
+    !isObject(body) ||
+    typeof body.templateId !== "string" ||
+    !body.templateId.trim()
   ) {
-    throw new Error("templateId must be a string or null when provided.");
+    throw new Error("templateId must be a non-empty string.");
   }
 }
 
@@ -496,16 +497,27 @@ const app = new Elysia()
       return await updateInteractiveReviewSessionCardTemplateMatch({
         sessionId: params.sessionId,
         cardId: params.cardId,
-        templateId:
-          typeof body.templateId === "string" && body.templateId.trim()
-            ? body.templateId.trim()
-            : null
+        templateId: body.templateId.trim()
       });
     } catch (error) {
       const message = getErrorMessage(error);
       set.status = message.includes("not found")
         ? 404
         : getErrorStatus(error, message.includes("Body") ? 400 : 500);
+      return { error: message };
+    }
+  })
+  .post("/api/review/sessions/:sessionId/cards/:cardId/template-clear", async ({ params, set }) => {
+    try {
+      return await clearInteractiveReviewSessionCardTemplateMatch({
+        sessionId: params.sessionId,
+        cardId: params.cardId
+      });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      set.status = message.includes("not found")
+        ? 404
+        : getErrorStatus(error, 500);
       return { error: message };
     }
   })
