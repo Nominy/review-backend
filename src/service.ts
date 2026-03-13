@@ -232,6 +232,7 @@ function applyApprovedProposalToSession(
     if (proposal.operation === "disable_template") {
       return {
         ...card,
+        categories: [proposal.category],
         matchedTemplateId: null,
         templateTitle: null,
         templateDescription: null,
@@ -242,6 +243,7 @@ function applyApprovedProposalToSession(
 
     const nextCard: ReviewSessionCard = {
       ...card,
+      categories: [proposal.category],
       matchedTemplateId: replacementTemplateId,
       templateTitle: proposal.title,
       templateDescription: proposal.description,
