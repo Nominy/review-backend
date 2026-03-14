@@ -8,7 +8,10 @@ import {
   validateTemplateRegistryFileData
 } from "./template-registry";
 import { config } from "./config";
-import { listPendingTemplateProposals } from "./pending-template-proposals";
+import {
+  listPendingTemplateProposals,
+  removePendingTemplateProposals
+} from "./pending-template-proposals";
 import type {
   CategoryName,
   PendingTemplateProposalQueueItem,
@@ -400,6 +403,86 @@ function buildPendingDraftTemplateId(
   );
 }
 
+function normalizeProposalText(value: unknown): string {
+  return String(value || "").trim();
+}
+
+function normalizeProposalReportTexts(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item) => normalizeProposalText(item)).filter(Boolean);
+}
+
+function haveSameReportTexts(left: unknown, right: unknown): boolean {
+  const normalizedLeft = normalizeProposalReportTexts(left);
+  const normalizedRight = normalizeProposalReportTexts(right);
+  if (normalizedLeft.length !== normalizedRight.length) {
+    return false;
+  }
+
+  return normalizedLeft.every((value, index) => value === normalizedRight[index]);
+}
+
+function findTemplateInCategories(
+  categories: Array<{ category: CategoryName; templates: TemplateDefinition[] }>,
+  templateId: string
+): TemplateDefinition | null {
+  for (const group of categories) {
+    const found = group.templates.find((template) => template.id === templateId);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+}
+
+function isPendingSuggestionPersisted(
+  categories: Array<{ category: CategoryName; templates: TemplateDefinition[] }>,
+  item: PendingTemplateProposalQueueItem
+): boolean {
+  const proposal = item.proposal;
+  if (proposal.operation === "create_template") {
+    const templateId = buildPendingDraftTemplateId(item, proposal.category);
+    const found = findTemplateInCategories(categories, templateId);
+    return !!(
+      found &&
+      found.enabled &&
+      normalizeProposalText(found.title) === normalizeProposalText(proposal.title) &&
+      normalizeProposalText(found.description) === normalizeProposalText(proposal.description) &&
+      haveSameReportTexts(found.reportTexts, proposal.reportTexts)
+    );
+  }
+
+  const targetTemplateId = normalizeProposalText(proposal.targetTemplateId);
+  if (!targetTemplateId) {
+    return false;
+  }
+  const found = findTemplateInCategories(categories, targetTemplateId);
+  if (!found) {
+    return false;
+  }
+
+  if (proposal.operation === "disable_template") {
+    return found.enabled === false;
+  }
+
+  return (
+    normalizeProposalText(found.title) === normalizeProposalText(proposal.title) &&
+    normalizeProposalText(found.description) === normalizeProposalText(proposal.description) &&
+    haveSameReportTexts(found.reportTexts, proposal.reportTexts)
+  );
+}
+
+export function findPersistedPendingSuggestionQueueIds(
+  categories: Array<{ category: CategoryName; templates: TemplateDefinition[] }>,
+  pendingSuggestions: PendingTemplateProposalQueueItem[]
+): string[] {
+  return pendingSuggestions
+    .filter((item) => isPendingSuggestionPersisted(categories, item))
+    .map((item) => item.queueId);
+}
+
 function applyPendingSuggestionToDraftFiles(
   files: TemplateFileWithMeta[],
   item: PendingTemplateProposalQueueItem
@@ -496,6 +579,8 @@ export async function saveTemplatesLabDraft(input: {
   ok: true;
   touchedCategories: CategoryName[];
   registryVersion: string;
+  clearedPendingQueueIds: string[];
+  clearedPendingCount: number;
 }> {
   return withWriteLock(async () => {
     if (!Array.isArray(input.categories)) {
@@ -605,19 +690,25 @@ export async function saveTemplatesLabDraft(input: {
       throw withStatusCode(error, getErrorStatusCode(error));
     }
 
-    if (!touchedCategories.size) {
-      return {
-        ok: true,
-        touchedCategories: [],
-        registryVersion: getTemplateRegistry().registryVersion
-      };
+    const pendingSuggestions = await listPendingTemplateProposals(config.pendingTemplateProposalPath);
+    const clearedPendingQueueIds = findPersistedPendingSuggestionQueueIds(nextFiles, pendingSuggestions);
+    const registryVersion = touchedCategories.size
+      ? writeTemplateFiles(nextFiles, touchedCategories)
+      : getTemplateRegistry().registryVersion;
+
+    if (clearedPendingQueueIds.length) {
+      await removePendingTemplateProposals(
+        config.pendingTemplateProposalPath,
+        clearedPendingQueueIds
+      );
     }
 
-    const registryVersion = writeTemplateFiles(nextFiles, touchedCategories);
     return {
       ok: true,
       touchedCategories: [...touchedCategories],
-      registryVersion
+      registryVersion,
+      clearedPendingQueueIds,
+      clearedPendingCount: clearedPendingQueueIds.length
     };
   });
 }

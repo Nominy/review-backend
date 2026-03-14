@@ -287,6 +287,14 @@
     updateDraftControls();
   }
 
+  function syncDirtyWithPendingSuggestions() {
+    if (Array.isArray(state.pendingSuggestions) && state.pendingSuggestions.length) {
+      markDirty();
+      return;
+    }
+    clearDirty();
+  }
+
   function setCreateMode() {
     state.selectedId = null;
     els.editorTitle.textContent = "Create Template";
@@ -424,7 +432,7 @@
             escapeHtml((proposal.category || "Unknown") + " | " + (proposal.operation || "pending")) +
             "</div>",
           "</div>",
-          '<span class="decision-state">Already staged in draft</span>',
+          '<span class="decision-state">Pending until saved</span>',
           "</div>",
           '<div class="pending-item-desc">' + escapeHtml(proposal.description || "") + "</div>",
           '<div class="pending-item-reason">' + escapeHtml(proposal.reason || "") + "</div>",
@@ -478,7 +486,7 @@
       els.registryVersion.textContent = payload.registryVersion || "-";
       renderCategoryOptions();
       renderPendingSuggestions();
-      clearDirty();
+      syncDirtyWithPendingSuggestions();
     if (state.selectedId) {
       const selected = getTemplateById(state.selectedId);
       if (selected) {
@@ -499,7 +507,7 @@
     }
     setStatus(
       state.pendingSuggestions.length
-        ? "Templates loaded. Approved suggestions are already staged in the draft."
+        ? "Templates loaded. Approved suggestions are staged locally and will clear after save."
         : "Templates loaded.",
       false
     );
@@ -1013,9 +1021,31 @@
     });
 
     await refreshTemplates({ force: true });
-    if (payload && Array.isArray(payload.touchedCategories) && payload.touchedCategories.length) {
+    const touchedCategories = payload && Array.isArray(payload.touchedCategories)
+      ? payload.touchedCategories
+      : [];
+    const clearedPendingCount = payload && Number.isFinite(payload.clearedPendingCount)
+      ? Number(payload.clearedPendingCount)
+      : 0;
+
+    if (touchedCategories.length) {
       setStatus(
-        "Saved draft to JSON. Updated " + payload.touchedCategories.join(", ") + ".",
+        "Saved draft to JSON. Updated " +
+          touchedCategories.join(", ") +
+          (clearedPendingCount
+            ? ". Cleared " + clearedPendingCount + " pending suggestion" + (clearedPendingCount === 1 ? "" : "s") + "."
+            : "."),
+        false
+      );
+      return;
+    }
+    if (clearedPendingCount) {
+      setStatus(
+        "Draft already matched disk. Cleared " +
+          clearedPendingCount +
+          " pending suggestion" +
+          (clearedPendingCount === 1 ? "" : "s") +
+          ".",
         false
       );
       return;

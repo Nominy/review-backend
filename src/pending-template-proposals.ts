@@ -135,3 +135,35 @@ export async function appendPendingTemplateProposal(
     await writeQueueFile(filePath, items);
   });
 }
+
+export async function removePendingTemplateProposal(
+  filePath: string,
+  queueId: string
+): Promise<boolean> {
+  const removed = await removePendingTemplateProposals(filePath, [queueId]);
+  return removed.length > 0;
+}
+
+export async function removePendingTemplateProposals(
+  filePath: string,
+  queueIds: string[]
+): Promise<string[]> {
+  const normalizedIds = [...new Set(queueIds.map((item) => String(item || "").trim()).filter(Boolean))];
+  if (!normalizedIds.length) {
+    return [];
+  }
+
+  return withWriteLock(async () => {
+    const items = await readQueue(filePath);
+    const queueIdSet = new Set(normalizedIds);
+    const keptItems = items.filter((entry) => !queueIdSet.has(entry.queueId));
+    if (keptItems.length === items.length) {
+      return [];
+    }
+
+    await writeQueueFile(filePath, keptItems);
+    return items
+      .map((entry) => entry.queueId)
+      .filter((queueId) => queueIdSet.has(queueId));
+  });
+}
