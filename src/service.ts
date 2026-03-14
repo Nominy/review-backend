@@ -12,6 +12,7 @@ import {
   updateReviewSession
 } from "./review-sessions";
 import { appendPendingTemplateProposal } from "./pending-template-proposals";
+import { persistApprovedTemplateSuggestion } from "./template-admin";
 import { renderFeedbackFromTemplateMatches, renderTemplateOpinionText } from "./template-renderer";
 import { extractChanges } from "./change-extractor";
 import { generateTemplateSuggestions } from "./template-suggestion-engine";
@@ -814,7 +815,11 @@ export async function decideInteractiveTemplateSuggestion(input: {
       reviewActionId: session.reviewActionId,
       proposal
     };
-    await appendPendingTemplateProposal(config.pendingTemplateProposalPath, queueItem);
+    try {
+      await persistApprovedTemplateSuggestion(queueItem);
+    } catch {
+      await appendPendingTemplateProposal(config.pendingTemplateProposalPath, queueItem);
+    }
   }
 
   await safeLogAnalytics({

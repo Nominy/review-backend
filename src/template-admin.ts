@@ -544,6 +544,34 @@ function applyPendingSuggestionsToDraftFiles(
   return files;
 }
 
+function findTouchedCategories(
+  currentFiles: TemplateFileWithMeta[],
+  nextFiles: TemplateFileWithMeta[]
+): Set<CategoryName> {
+  const touchedCategories = new Set<CategoryName>();
+
+  for (const category of CATEGORIES) {
+    const currentFile = findFileByCategory(currentFiles, category);
+    const nextFile = findFileByCategory(nextFiles, category);
+    const currentComparable = JSON.stringify({
+      category: currentFile.category,
+      defaultText: currentFile.defaultText,
+      templates: [...currentFile.templates].sort(sortTemplates)
+    });
+    const nextComparable = JSON.stringify({
+      category: nextFile.category,
+      defaultText: nextFile.defaultText,
+      templates: [...nextFile.templates].sort(sortTemplates)
+    });
+
+    if (currentComparable !== nextComparable) {
+      touchedCategories.add(category);
+    }
+  }
+
+  return touchedCategories;
+}
+
 export async function listTemplatesLabData(): Promise<{
   ok: true;
   registryVersion: string;
@@ -571,6 +599,31 @@ export async function listTemplatesLabData(): Promise<{
         })),
     pendingSuggestions
   };
+}
+
+export async function persistApprovedTemplateSuggestion(
+  item: PendingTemplateProposalQueueItem
+): Promise<{
+  ok: true;
+  touchedCategories: CategoryName[];
+  registryVersion: string;
+}> {
+  return withWriteLock(async () => {
+    const currentFiles = normalizeTemplateFiles(cloneTemplateFiles());
+    const nextFiles = normalizeTemplateFiles(
+      applyPendingSuggestionsToDraftFiles(cloneTemplateFiles(), [item])
+    );
+    const touchedCategories = findTouchedCategories(currentFiles, nextFiles);
+    const registryVersion = touchedCategories.size
+      ? writeTemplateFiles(nextFiles, touchedCategories)
+      : getTemplateRegistry().registryVersion;
+
+    return {
+      ok: true,
+      touchedCategories: [...touchedCategories],
+      registryVersion
+    };
+  });
 }
 
 export async function saveTemplatesLabDraft(input: {
