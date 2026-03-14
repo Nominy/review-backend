@@ -328,13 +328,11 @@
   }
 
   function renderCategoryOptions() {
-    const options = ['<option value="__all__">All Categories</option>']
-      .concat(
-        state.categories.map((group) =>
-          '<option value="' + escapeHtml(group.category) + '">' + escapeHtml(group.category) + "</option>"
-        )
-      )
-      .join("");
+    const categoryOptions = state.categories.map(
+      (group) =>
+        '<option value="' + escapeHtml(group.category) + '">' + escapeHtml(group.category) + "</option>"
+    );
+    const options = ['<option value="__all__">All Categories</option>'].concat(categoryOptions).join("");
     const existingValue = els.categoryFilter.value;
     els.categoryFilter.innerHTML = options;
     if (
@@ -344,11 +342,7 @@
       els.categoryFilter.value = existingValue;
     }
 
-    const createOptions = state.categories
-      .map((group) =>
-        '<option value="' + escapeHtml(group.category) + '">' + escapeHtml(group.category) + "</option>"
-      )
-      .join("");
+    const createOptions = categoryOptions.join("");
     const createValue = els.createCategory.value;
     els.createCategory.innerHTML = createOptions;
     if (
@@ -356,6 +350,15 @@
       Array.from(els.createCategory.options).some((option) => option.value === createValue)
     ) {
       els.createCategory.value = createValue;
+    }
+
+    const editValue = els.editCategory.value;
+    els.editCategory.innerHTML = createOptions;
+    if (
+      editValue &&
+      Array.from(els.editCategory.options).some((option) => option.value === editValue)
+    ) {
+      els.editCategory.value = editValue;
     }
     buildIdPreview();
   }
@@ -641,15 +644,26 @@
       throw new Error("Template not found in draft: " + id);
     }
 
+    const nextCategory = assertNonEmpty(els.editCategory.value, "Category");
+    const nextGroup = state.categories.find((item) => item.category === nextCategory);
+    if (!nextGroup) {
+      throw new Error("Unknown category: " + nextCategory);
+    }
+
     found.template.title = assertNonEmpty(els.editName.value, "Name");
     found.template.description = assertNonEmpty(els.editDescription.value, "Error description");
     found.template.reportTexts = collectVariantTexts(els.editReportTexts, "Template text variants");
     found.template.enabled = !!els.editEnabled.checked;
 
+    if (found.group.category !== nextCategory) {
+      found.group.templates = found.group.templates.filter((template) => template.id !== id);
+      nextGroup.templates.push(found.template);
+    }
+
     sortDraftTemplates();
     markDirty();
     setEditMode({
-      category: found.group.category,
+      category: nextCategory,
       id: found.template.id,
       title: found.template.title,
       description: found.template.description,
@@ -657,7 +671,12 @@
       priority: found.template.priority,
       enabled: found.template.enabled
     });
-    setStatus("Updated draft for " + id + ".", false);
+    setStatus(
+      found.group.category !== nextCategory
+        ? "Moved " + id + " to " + nextCategory + " in the draft."
+        : "Updated draft for " + id + ".",
+      false
+    );
   }
 
   function deleteSelectedTemplate() {
