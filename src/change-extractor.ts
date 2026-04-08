@@ -111,7 +111,7 @@ function extractTextChanges(packet: PromptPacket): Change[] {
 
 function extractTimestampChanges(packet: PromptPacket): Change[] {
   const changes: Change[] = [];
-  const ts = packet.babelDiff?.timestamp;
+  const ts = packet.structuralDiff?.timestamp;
   if (!ts) return changes;
 
   for (const sample of ts.samples) {
@@ -142,7 +142,7 @@ function extractTimestampChanges(packet: PromptPacket): Change[] {
 
 function extractSegmentationChanges(packet: PromptPacket): Change[] {
   const changes: Change[] = [];
-  const seg = packet.babelDiff?.segmentation;
+  const seg = packet.structuralDiff?.segmentation;
   if (!seg) return changes;
 
   for (const sample of seg.samples) {

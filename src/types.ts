@@ -90,16 +90,14 @@ export type PromptPacket = {
     currentWords: number;
     segmentCountDelta: number;
     localTextChangeCount: number;
-    hasBabelDiff: boolean;
+    hasStructuralDiff: boolean;
   };
   localTextEvidence: {
     changedPairs: PromptTextDiff[];
     originalOnlySamples: PromptSegmentSample[];
     currentOnlySamples: PromptSegmentSample[];
   };
-  babelDiff?: {
-    referenceReviewActionId: string;
-    currentReviewActionId: string;
+  structuralDiff?: {
     segmentation: {
       overview: {
         mappingCount: number;
@@ -155,38 +153,11 @@ export type PromptPacket = {
       };
       samples: Array<{
         refText: string;
+        hypText: string;
         startShiftMs: number;
         endShiftMs: number;
         avgShiftMs: number;
         quality: string;
-      }>;
-    };
-    wordAccuracy: {
-      overview: {
-        overallWordErrorRate: number | null;
-        totalReferenceWords: number | null;
-        totalHypothesisWords: number | null;
-        totalInsertions: number | null;
-        totalDeletions: number | null;
-        totalSubstitutions: number | null;
-      };
-      speakerBreakdown: Array<{
-        processedRecordingId: string;
-        wordErrorRate: number | null;
-        totalReferenceWords: number | null;
-        totalHypothesisWords: number | null;
-        insertions: number | null;
-        deletions: number | null;
-        substitutions: number | null;
-      }>;
-      wordDiffSamples: Array<{
-        processedRecordingId: string;
-        referenceText: string;
-        hypothesisText: string;
-        changedTokens: Array<{
-          value: string;
-          status: string;
-        }>;
       }>;
     };
   };

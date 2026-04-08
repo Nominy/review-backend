@@ -17,7 +17,7 @@ const RECALL_THRESHOLD = 0.99;
 export function runDeterministicRules(packet: PromptPacket): string[] {
   const findings: string[] = [];
 
-  const ts = packet.babelDiff?.timestamp?.overview;
+  const ts = packet.structuralDiff?.timestamp?.overview;
   if (!ts) return findings;
 
   if (typeof ts.precision === "number" && ts.precision < PRECISION_THRESHOLD) {

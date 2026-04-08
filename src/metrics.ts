@@ -6,11 +6,11 @@ import type {
   PromptSegmentSample,
   PromptTextDiff
 } from "./types";
-import { buildBabelDiffPromptPacket } from "./babel-diff";
+import { buildStructuralDiffPromptPacket } from "./structural-diff";
 import { alignSegments, diffWords } from "./text-diff";
 
-export const METRICS_VERSION = "v7";
-export const PROMPT_VERSION = "v14";
+export const METRICS_VERSION = "v8";
+export const PROMPT_VERSION = "v15";
 
 function normalizeWhitespace(text: string): string {
   return String(text || "").replace(/\s+/g, " ").trim();
@@ -186,7 +186,7 @@ export function computeReviewMetrics(
 } {
   const oldAnnotations = Array.isArray(original.annotations) ? original.annotations : [];
   const newAnnotations = Array.isArray(current.annotations) ? current.annotations : [];
-  const babelDiffPacket = buildBabelDiffPromptPacket(babelDiff);
+  const structuralDiffPacket = buildStructuralDiffPromptPacket(oldAnnotations, newAnnotations);
 
   const oldText = oldAnnotations.map((annotation) => annotation.content || "").join(" ");
   const newText = newAnnotations.map((annotation) => annotation.content || "").join(" ");
@@ -215,14 +215,14 @@ export function computeReviewMetrics(
       currentWords,
       segmentCountDelta: newAnnotations.length - oldAnnotations.length,
       localTextChangeCount,
-      hasBabelDiff: !!babelDiffPacket
+      hasStructuralDiff: true
     },
     localTextEvidence: {
       changedPairs,
       originalOnlySamples,
       currentOnlySamples
     },
-    ...(babelDiffPacket ? { babelDiff: babelDiffPacket } : {})
+    structuralDiff: structuralDiffPacket
   };
 
   const featurePacket = {
@@ -233,7 +233,7 @@ export function computeReviewMetrics(
       originalOnlySamples: promptPacket.localTextEvidence.originalOnlySamples,
       currentOnlySamples: promptPacket.localTextEvidence.currentOnlySamples
     },
-    ...(babelDiffPacket ? { babelDiff: babelDiffPacket } : {})
+    structuralDiff: structuralDiffPacket
   };
 
   const stats = {
@@ -252,7 +252,8 @@ export function computeReviewMetrics(
       segmentCountDelta: newAnnotations.length - oldAnnotations.length,
       previewBefore: oldText,
       previewAfter: newText,
-      babelDiffUsed: !!babelDiffPacket
+      structuralDiffUsed: true,
+      babelDiffCaptured: !!babelDiff
     }
   };
 
