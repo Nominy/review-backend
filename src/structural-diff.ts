@@ -5,6 +5,7 @@ type StructuralDiffPromptPacket = NonNullable<PromptPacket["structuralDiff"]>;
 
 type DiffSegment = {
   annotationId: string;
+  processedRecordingId: string;
   text: string;
   startTimeInSeconds: number;
   endTimeInSeconds: number;
@@ -78,6 +79,7 @@ function sortSegments<T extends DiffSegment>(segments: T[]): T[] {
 function normalizeSegment(annotation: Annotation): DiffSegment {
   return {
     annotationId: String(annotation.id || ""),
+    processedRecordingId: String(annotation.processedRecordingId || ""),
     text: String(annotation.content || ""),
     startTimeInSeconds: round(
       Math.min(annotation.startTimeInSeconds, annotation.endTimeInSeconds),
@@ -93,6 +95,9 @@ function normalizeSegments(annotations: Annotation[]): DiffSegment[] {
 }
 
 function getOverlapDuration(left: DiffSegment, right: DiffSegment): number {
+  if (left.processedRecordingId !== right.processedRecordingId) {
+    return 0;
+  }
   return Math.max(
     0,
     Math.min(left.endTimeInSeconds, right.endTimeInSeconds) -
@@ -240,6 +245,15 @@ function classifyTimestampQuality(avgShiftMs: number): string {
   return "poor";
 }
 
+function isExactSegmentMatch(base: DiffSegment, current: DiffSegment): boolean {
+  return (
+    base.processedRecordingId === current.processedRecordingId &&
+    base.text === current.text &&
+    Math.abs(base.startTimeInSeconds - current.startTimeInSeconds) <= DIFF_TOLERANCE_SECONDS &&
+    Math.abs(base.endTimeInSeconds - current.endTimeInSeconds) <= DIFF_TOLERANCE_SECONDS
+  );
+}
+
 function buildTimestampOverview(result: DiffResult): StructuralDiffPromptPacket["timestamp"]["overview"] {
   const matched = result.oneToOneShiftAveragesMs.length;
   const exactMatchCount = result.exactMatchCount;
@@ -292,7 +306,33 @@ function buildDiffResult(baseSnapshot: DiffSegment[], currentSnapshot: DiffSegme
   let matchedCount = 0;
   let exactMatchCount = 0;
 
+  // Reserve exact 1:1 matches before structural inference. Without this,
+  // unchanged long segments that contain short overlapping interjections can
+  // be misclassified as merges purely due to overlap.
+  for (let baseIndex = 0; baseIndex < base.length; baseIndex += 1) {
+    const baseSegment = base[baseIndex];
+    const exactCurrentIndex = current.findIndex(
+      (currentSegment, currentIndex) =>
+        !currentUsed.has(currentIndex) && isExactSegmentMatch(baseSegment, currentSegment),
+    );
+
+    if (exactCurrentIndex === -1) {
+      continue;
+    }
+
+    baseUsed.add(baseIndex);
+    currentUsed.add(exactCurrentIndex);
+    unchangedCount += 1;
+    matchedCount += 1;
+    exactMatchCount += 1;
+    oneToOneShiftAveragesMs.push(0);
+  }
+
   for (let currentIndex = 0; currentIndex < current.length; currentIndex += 1) {
+    if (currentUsed.has(currentIndex)) {
+      continue;
+    }
+
     const currentSegment = current[currentIndex];
     const overlappingBaseIndexes = base
       .map((segment, index) => ({ segment, index }))

@@ -437,6 +437,10 @@ export function alignSegments(
  * portion of audio and should be paired for comparison.
  */
 function computeMatchScore(a: Annotation, b: Annotation): number {
+  if (a.processedRecordingId !== b.processedRecordingId) {
+    return 0;
+  }
+
   const overlapSec = Math.max(
     0,
     Math.min(a.endTimeInSeconds, b.endTimeInSeconds) -

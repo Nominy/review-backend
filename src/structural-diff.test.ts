@@ -97,6 +97,31 @@ describe("buildStructuralDiffPromptPacket", () => {
       "added",
     ]);
   });
+
+  test("treats processedRecordingId as a hard boundary", () => {
+    const original = [
+      annotation("speaker-1", 0, 10, "long question"),
+      annotation("speaker-2", 2, 2.5, "угу"),
+    ];
+    const current = [
+      annotation("speaker-1-next", 0, 10, "long question"),
+      annotation("speaker-2-next", 2, 2.5, "угу"),
+    ].map((item, index) => ({
+      ...item,
+      processedRecordingId: index === 0 ? "recording-a" : "recording-b",
+    }));
+    original[0]!.processedRecordingId = "recording-a";
+    original[1]!.processedRecordingId = "recording-b";
+
+    const packet = buildStructuralDiffPromptPacket(original, current);
+
+    expect(packet.segmentation.samples).toHaveLength(0);
+    expect(packet.segmentation.overview.mergeCount).toBe(0);
+    expect(packet.segmentation.overview.addedCount).toBe(0);
+    expect(packet.segmentation.overview.deletedCount).toBe(0);
+    expect(packet.timestamp.overview.matchedSegments).toBe(2);
+    expect(packet.timestamp.overview.unmatchedSegments).toBe(0);
+  });
 });
 
 describe("computeReviewMetrics structural diff integration", () => {
