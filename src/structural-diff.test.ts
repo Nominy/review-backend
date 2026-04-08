@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { buildPrompts } from "./prompt";
 import { extractChanges } from "./change-extractor";
 import { runDeterministicRules } from "./deterministic-rules";
 import { computeReviewMetrics } from "./metrics";
 import { buildStructuralDiffPromptPacket } from "./structural-diff";
+import { getTemplateRegistry } from "./template-registry";
 import type { Annotation, NormalizedState } from "./types";
 
 function annotation(
@@ -106,10 +108,29 @@ describe("computeReviewMetrics structural diff integration", () => {
 
     expect(computed.promptPacket.overview.hasStructuralDiff).toBe(true);
     expect(computed.promptPacket.structuralDiff?.timestamp.samples).toHaveLength(1);
-    expect(extractChanges(computed.promptPacket).map((change) => change.type)).toContain("TIMESTAMP");
+    const changes = extractChanges(computed.promptPacket);
+    expect(changes.map((change) => change.type)).toContain("TIMESTAMP SHIFT");
+    expect(changes[0]?.description).toContain("start inward");
+    expect(changes[0]?.description).toContain("end outward");
     expect(runDeterministicRules(computed.promptPacket)).toEqual([
       "timestamp_accuracy.nizkiy_precision",
       "timestamp_accuracy.nizkiy_recall",
     ]);
+  });
+
+  test("emits explicit structural labels in the prompt", () => {
+    const original = state("original", [
+      annotation("a", 0, 1, "one"),
+      annotation("b", 1.2, 2.1, "two"),
+    ]);
+    const current = state("current", [annotation("ab", 0, 2.1, "one two")]);
+
+    const computed = computeReviewMetrics(original, current, "review-action");
+    const registry = getTemplateRegistry();
+    const prompts = buildPrompts(computed.promptPacket, registry.promptCatalog);
+
+    expect(prompts.userPrompt).toContain("[SEG MERGED]");
+    expect(prompts.systemPrompt).toContain("TIMESTAMP SHIFT");
+    expect(prompts.systemPrompt).toContain("SEG ADDED, SEG DELETED, SEG SPLIT, and SEG MERGED");
   });
 });

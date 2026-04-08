@@ -1,6 +1,98 @@
-import type { BabelDiffPayload, PromptPacket } from "./types";
+import type { BabelDiffPayload } from "./types";
 
-type BabelDiffPromptPacket = NonNullable<PromptPacket["babelDiff"]>;
+type BabelDiffPromptPacket = {
+  referenceReviewActionId: string;
+  currentReviewActionId: string;
+  segmentation: {
+    overview: {
+      mappingCount: number;
+      unchangedCount: number;
+      modifiedCount: number;
+      splitCount: number;
+      mergeCount: number;
+      addedCount: number;
+      deletedCount: number;
+    };
+    samples: Array<{
+      relationship: string;
+      structuralSeverity: string;
+      referenceText: string;
+      hypothesisText: string;
+      referenceSegmentCount: number;
+      hypothesisSegmentCount: number;
+      substitutions: number;
+      insertions: number;
+      deletions: number;
+      changedTokens: Array<{
+        value: string;
+        status: string;
+      }>;
+      referenceSegments: Array<{
+        annotationId: string;
+        text: string;
+        startTimeInSeconds: number | null;
+        endTimeInSeconds: number | null;
+        wordRange: [number, number] | null;
+      }>;
+      hypothesisSegments: Array<{
+        annotationId: string;
+        text: string;
+        startTimeInSeconds: number | null;
+        endTimeInSeconds: number | null;
+        wordRange: [number, number] | null;
+      }>;
+    }>;
+  };
+  timestamp: {
+    overview: {
+      precision: number | null;
+      recall: number | null;
+      f1: number | null;
+      totalSegments: number | null;
+      matchedSegments: number | null;
+      unmatchedSegments: number | null;
+      avgShiftMs: number | null;
+      within50ms: number | null;
+      within100ms: number | null;
+      within200ms: number | null;
+    };
+    samples: Array<{
+      refText: string;
+      startShiftMs: number;
+      endShiftMs: number;
+      avgShiftMs: number;
+      quality: string;
+    }>;
+  };
+  wordAccuracy: {
+    overview: {
+      overallWordErrorRate: number | null;
+      totalReferenceWords: number | null;
+      totalHypothesisWords: number | null;
+      totalInsertions: number | null;
+      totalDeletions: number | null;
+      totalSubstitutions: number | null;
+    };
+    speakerBreakdown: Array<{
+      processedRecordingId: string;
+      wordErrorRate: number | null;
+      totalReferenceWords: number | null;
+      totalHypothesisWords: number | null;
+      insertions: number | null;
+      deletions: number | null;
+      substitutions: number | null;
+    }>;
+    wordDiffSamples: Array<{
+      processedRecordingId: string;
+      referenceText: string;
+      hypothesisText: string;
+      changedTokens: Array<{
+        value: string;
+        status: string;
+      }>;
+    }>;
+  };
+};
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);

@@ -8,17 +8,18 @@ import type { CategoryName, Change, ChangeType, PromptPacket } from "./types";
  * are included in the scoped prompt.
  *
  * Change type -> relevant categories mapping:
- *   TEXT         -> Word Accuracy, Punctuation & Formatting, Tags & Emphasis
- *   TIMESTAMP    -> Timestamp Accuracy
- *   SEGMENTATION -> Segmentation
- *   WORD_DIFF    -> legacy only; excluded from new extraction
+ *   TEXT CHANGE     -> Word Accuracy, Punctuation & Formatting, Tags & Emphasis
+ *   TIMESTAMP SHIFT -> Timestamp Accuracy
+ *   SEG *           -> Segmentation
  */
 
 export const CHANGE_TYPE_CATEGORIES: Record<ChangeType, CategoryName[]> = {
-  TEXT: ["Word Accuracy", "Punctuation & Formatting", "Tags & Emphasis"],
-  TIMESTAMP: ["Timestamp Accuracy"],
-  SEGMENTATION: ["Segmentation"],
-  WORD_DIFF: []
+  "TEXT CHANGE": ["Word Accuracy", "Punctuation & Formatting", "Tags & Emphasis"],
+  "TIMESTAMP SHIFT": ["Timestamp Accuracy"],
+  "SEG ADDED": ["Segmentation"],
+  "SEG DELETED": ["Segmentation"],
+  "SEG SPLIT": ["Segmentation"],
+  "SEG MERGED": ["Segmentation"]
 };
 
 function escapeQuotes(text: string): string {
@@ -27,11 +28,6 @@ function escapeQuotes(text: string): string {
 
 function normalizeInlineText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
-}
-
-function trimEvidenceText(text: string): string | undefined {
-  const normalized = text.trim();
-  return normalized ? normalized : undefined;
 }
 
 function formatTextChange(before: string, after: string): string {
@@ -65,13 +61,20 @@ function summarizeTimestampShift(sample: {
 }): string {
   const shifts: string[] = [];
   if (sample.startShiftMs !== 0) {
-    shifts.push(`start ${sample.startShiftMs > 0 ? "+" : ""}${sample.startShiftMs}ms`);
+    shifts.push(formatTimestampEdgeShift("start", sample.startShiftMs));
   }
   if (sample.endShiftMs !== 0) {
-    shifts.push(`end ${sample.endShiftMs > 0 ? "+" : ""}${sample.endShiftMs}ms`);
+    shifts.push(formatTimestampEdgeShift("end", sample.endShiftMs));
   }
   const shiftSummary = shifts.length > 0 ? shifts.join(", ") : `avg ${sample.avgShiftMs}ms`;
   return `Timing shift (${shiftSummary}, ${sample.quality} confidence)`;
+}
+
+function toSegmentationChangeType(relationship: string): ChangeType {
+  if (relationship === "added") return "SEG ADDED";
+  if (relationship === "deleted") return "SEG DELETED";
+  if (relationship === "split") return "SEG SPLIT";
+  return "SEG MERGED";
 }
 
 function summarizeSegmentationChange(sample: {
@@ -80,7 +83,26 @@ function summarizeSegmentationChange(sample: {
   referenceSegmentCount: number;
   hypothesisSegmentCount: number;
 }): string {
-  return `${sample.relationship} (${sample.referenceSegmentCount} ref, ${sample.hypothesisSegmentCount} hyp, ${sample.structuralSeverity})`;
+  return `${toSegmentationChangeType(sample.relationship)} (${sample.referenceSegmentCount} ref, ${sample.hypothesisSegmentCount} hyp, ${sample.structuralSeverity})`;
+}
+
+function getTimestampShiftDirection(
+  edge: "start" | "end",
+  deltaMs: number,
+): "inward" | "outward" {
+  if (edge === "start") {
+    return deltaMs > 0 ? "inward" : "outward";
+  }
+  return deltaMs < 0 ? "inward" : "outward";
+}
+
+function getTimestampShiftMeaning(direction: "inward" | "outward"): string {
+  return direction === "inward" ? "likely removed silence" : "likely restored cut speech";
+}
+
+function formatTimestampEdgeShift(edge: "start" | "end", deltaMs: number): string {
+  const direction = getTimestampShiftDirection(edge, deltaMs);
+  return `${edge} ${direction} (${deltaMs > 0 ? "+" : ""}${deltaMs}ms, ${getTimestampShiftMeaning(direction)})`;
 }
 
 function extractTextChanges(packet: PromptPacket): Change[] {
@@ -92,8 +114,8 @@ function extractTextChanges(packet: PromptPacket): Change[] {
 
     changes.push({
       index: 0,
-      type: "TEXT",
-      categories: CHANGE_TYPE_CATEGORIES.TEXT,
+      type: "TEXT CHANGE",
+      categories: CHANGE_TYPE_CATEGORIES["TEXT CHANGE"],
       summary: summarizeTextPair(pair.before, pair.after),
       evidence: description,
       evidenceDetail: {
@@ -118,15 +140,15 @@ function extractTimestampChanges(packet: PromptPacket): Change[] {
     if (sample.quality === "high") continue;
 
     const shifts: string[] = [];
-    if (sample.startShiftMs !== 0) shifts.push(`start ${sample.startShiftMs > 0 ? "+" : ""}${sample.startShiftMs}ms`);
-    if (sample.endShiftMs !== 0) shifts.push(`end ${sample.endShiftMs > 0 ? "+" : ""}${sample.endShiftMs}ms`);
+    if (sample.startShiftMs !== 0) shifts.push(formatTimestampEdgeShift("start", sample.startShiftMs));
+    if (sample.endShiftMs !== 0) shifts.push(formatTimestampEdgeShift("end", sample.endShiftMs));
     const shiftDesc = shifts.length > 0 ? shifts.join(", ") : `avg ${sample.avgShiftMs}ms`;
     const desc = `Timing shift (${shiftDesc}) [${sample.quality}]: "${escapeQuotes(sample.refText)}"`;
 
     changes.push({
       index: 0,
-      type: "TIMESTAMP",
-      categories: CHANGE_TYPE_CATEGORIES.TIMESTAMP,
+      type: "TIMESTAMP SHIFT",
+      categories: CHANGE_TYPE_CATEGORIES["TIMESTAMP SHIFT"],
       summary: summarizeTimestampShift(sample),
       evidence: desc,
       evidenceDetail: {
@@ -163,12 +185,13 @@ function extractSegmentationChanges(packet: PromptPacket): Change[] {
     if (sample.insertions > 0) tokenChanges.push(`${sample.insertions} ins`);
     if (sample.deletions > 0) tokenChanges.push(`${sample.deletions} del`);
     const tokenSuffix = tokenChanges.length > 0 ? ` (${tokenChanges.join(", ")})` : "";
-    const desc = `${relationship} [${severity}] ref=${refCount}->hyp=${hypCount}${tokenSuffix}: ${refText} -> ${hypText}`;
+    const type = toSegmentationChangeType(relationship);
+    const desc = `${type} [${severity}] ref=${refCount}->hyp=${hypCount}${tokenSuffix}: ${refText} -> ${hypText}`;
 
     changes.push({
       index: 0,
-      type: "SEGMENTATION",
-      categories: CHANGE_TYPE_CATEGORIES.SEGMENTATION,
+      type,
+      categories: CHANGE_TYPE_CATEGORIES[type],
       summary: summarizeSegmentationChange(sample),
       evidence: desc,
       evidenceDetail: {

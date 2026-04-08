@@ -8,7 +8,7 @@ import type { Change, PromptPacket, TemplatePromptCatalog } from "./types";
  * 1. Extract a flat, numbered Change[] list from the packet
  * 2. Build a human-readable numbered list in the user prompt
  * 3. Include only the template catalog sections relevant to the change types present
- * 4. Ask the LLM to classify each change by number → templateId
+ * 4. Ask the LLM to classify each change by number -> templateId
  */
 
 const RESPONSE_SCHEMA = '{"classifications": [{"change": 1, "templateId": "category.template_id"}]}';
@@ -22,14 +22,17 @@ function buildSystemPrompt(): string {
     "Rules:",
     "1. Only use template IDs from the provided catalog. Do not invent IDs.",
     "2. A change may match zero or one template. Skip changes that match nothing.",
-    "3. Multiple changes may map to the same template — that is fine.",
-    "4. For text changes, choose the most specific template that explains the edit.",
-    "5. Do not return a broad generic template when a specific one already explains it.",
-    "6. Generic punctuation templates are fallback-only — do not combine them with",
-    "   dedicated tag/service-markup templates unless there is separate independent",
-    "   punctuation evidence.",
-    "7. For segmentation changes, use the relationship and severity information provided.",
-    "8. Treat inline tags/service markup as part of the diff text itself.",
+    "3. Multiple changes may map to the same template; that is fine.",
+    "4. Treat the change label as authoritative structure.",
+    "5. TEXT CHANGE lines are for word, punctuation, formatting, and tag mistakes visible in the text diff.",
+    "6. TIMESTAMP SHIFT lines are only for 1:1 boundary movement on an otherwise matched segment.",
+    "7. SEG ADDED, SEG DELETED, SEG SPLIT, and SEG MERGED lines are structural segmentation events.",
+    "8. For text changes, choose the most specific template that explains the edit.",
+    "9. Do not return a broad generic template when a specific one already explains it.",
+    "10. Generic punctuation templates are fallback-only; do not combine them with",
+    "    dedicated tag/service-markup templates unless there is separate independent",
+    "    punctuation evidence.",
+    "11. Treat inline tags/service markup as part of the diff text itself.",
     "",
     "Output rules:",
     "- Return strict JSON only. No markdown. No prose outside JSON.",
@@ -55,7 +58,6 @@ function buildScopedCatalog(
 ): string {
   const relevant = getRelevantCategories(changes);
 
-  // Filter to only categories that have changes, preserving order
   const sections: string[] = [];
 
   for (const category of Object.keys(fullCatalog) as Array<keyof TemplatePromptCatalog>) {

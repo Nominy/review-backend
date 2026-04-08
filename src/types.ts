@@ -207,7 +207,13 @@ export type TemplateSelectionResponse = {
   findings: string[];
 };
 
-export type ChangeType = "TEXT" | "TIMESTAMP" | "SEGMENTATION" | "WORD_DIFF";
+export type ChangeType =
+  | "TEXT CHANGE"
+  | "TIMESTAMP SHIFT"
+  | "SEG ADDED"
+  | "SEG DELETED"
+  | "SEG SPLIT"
+  | "SEG MERGED";
 
 export type Change = {
   index: number;
