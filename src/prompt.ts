@@ -1,71 +1,112 @@
-import { CATEGORIES } from "./rules";
-import type { PromptPacket } from "./types";
+import { extractChanges, getRelevantCategories } from "./change-extractor";
+import type { Change, PromptPacket, TemplatePromptCatalog } from "./types";
 
-export function buildPrompts(promptPacket: PromptPacket): {
-  systemPrompt: string;
-  userPrompt: string;
-  preview: string;
-} {
-  const schema = {
-    feedback: CATEGORIES.map((category) => ({
-      category,
-      score: 1,
-      note: "..."
-    }))
-  };
+/**
+ * Builds the system + user prompts using the change-list approach.
+ *
+ * Instead of dumping the full PromptPacket as JSON, we:
+ * 1. Extract a flat, numbered Change[] list from the packet
+ * 2. Build a human-readable numbered list in the user prompt
+ * 3. Include only the template catalog sections relevant to the change types present
+ * 4. Ask the LLM to classify each change by number -> templateId
+ */
 
-  const promptInput = {
-    editFootprint: promptPacket.editFootprint,
-    ownershipSummary: promptPacket.ownershipSummary,
-    scoreCaps: promptPacket.scoreCaps,
-    categoryEvidence: promptPacket.categoryEvidence
-  };
+const RESPONSE_SCHEMA = '{"classifications": [{"change": 1, "templateId": "category.template_id"}]}';
 
-  const systemPrompt = [
-    "You are an L2 QA reviewer for Babel Audio.",
-    "ORIGINAL is the L1 transcript before QA. CURRENT is the L2 transcript after QA.",
-    "Your job is to explain what L1 should improve, based only on the observed QA corrections.",
+function buildSystemPrompt(): string {
+  return [
+    "You are a transcript issue classifier for Babel Audio.",
+    "You receive a numbered list of changes between two transcript versions.",
+    "For each change, decide if it matches an issue template from the catalog.",
     "",
-    "Critical attribution rules:",
-    "1. Every concrete correction belongs to exactly one primary category.",
-    "2. Do not double count side effects in multiple categories.",
-    "3. Segmentation owns split/combine/add/delete events.",
-    "4. Timestamp Accuracy applies only to stable 1:1 segment boundary adjustments.",
-    "5. Number rendering with service tags like {SKAZ: ...} or {ISKAZ: ...} belongs to Tags & Emphasis, not Word Accuracy.",
-    "6. If punctuation moved because a word was added or removed, that still belongs to Word Accuracy, not Punctuation & Formatting.",
-    "",
-    "Scoring rules:",
-    "- Use score caps from the user payload as hard upper bounds.",
-    "- 1 = isolated or no material issue.",
-    "- 2 = repeated issue.",
-    "- 3 = clearly systemic issue.",
-    "- If a category has no material evidence, keep score at 1.",
+    "Rules:",
+    "1. Only use template IDs from the provided catalog. Do not invent IDs.",
+    "2. A change may match zero or one template. Skip changes that match nothing.",
+    "3. Multiple changes may map to the same template; that is fine.",
+    "4. Treat the change label as authoritative structure.",
+    "5. TEXT CHANGE lines are for word, punctuation, formatting, and tag mistakes visible in the text diff.",
+    "6. TIMESTAMP SHIFT lines are only for 1:1 boundary movement on an otherwise matched segment.",
+    "7. SEG ADDED, SEG DELETED, SEG SPLIT, and SEG MERGED lines are structural segmentation events.",
+    "8. For text changes, choose the most specific template that explains the edit.",
+    "9. Do not return a broad generic template when a specific one already explains it.",
+    "10. Generic punctuation templates are fallback-only; do not combine them with",
+    "    dedicated tag/service-markup templates unless there is separate independent",
+    "    punctuation evidence.",
+    "11. Treat inline tags/service markup as part of the diff text itself.",
     "",
     "Output rules:",
     "- Return strict JSON only. No markdown. No prose outside JSON.",
     "- Use exactly this schema:",
-    JSON.stringify(schema),
-    `- feedback must contain exactly ${CATEGORIES.length} items with these exact categories: ${JSON.stringify(CATEGORIES)}`,
-    "- note must be in Russian.",
-    "- note must be concise, practical, and must mention only the primary owned issue for that category.",
-    "- For score 1, keep the note calm and brief. For score 2 or 3, be direct and corrective, without generic praise."
+    RESPONSE_SCHEMA,
+    '- If no changes match any template, return: {"classifications": []}',
   ].join("\n");
+}
 
-  const userPrompt = [
-    "Review the category evidence below and generate feedback.",
+function formatChangeList(changes: Change[]): string {
+  if (changes.length === 0) {
+    return "(no changes detected)";
+  }
+
+  return changes
+    .map((c) => `${c.index}. [${c.type}] ${c.description}`)
+    .join("\n");
+}
+
+function buildScopedCatalog(
+  changes: Change[],
+  fullCatalog: TemplatePromptCatalog
+): string {
+  const relevant = getRelevantCategories(changes);
+
+  const sections: string[] = [];
+
+  for (const category of Object.keys(fullCatalog) as Array<keyof TemplatePromptCatalog>) {
+    if (!relevant.has(category)) continue;
+
+    const templates = fullCatalog[category];
+    if (!templates || templates.length === 0) continue;
+
+    const lines = templates.map((t) => `  - ${t.id}: ${t.description}`);
+    sections.push(`${category}:\n${lines.join("\n")}`);
+  }
+
+  if (sections.length === 0) {
+    return "(no relevant templates)";
+  }
+
+  return sections.join("\n\n");
+}
+
+function buildUserPrompt(
+  changes: Change[],
+  fullCatalog: TemplatePromptCatalog
+): string {
+  return [
+    "Classify each change against the matching template from the catalog below.",
     "",
-    "Internal checklist before scoring:",
-    "- Is there actual owned evidence for this category?",
-    "- Is it isolated, repeated, or systemic?",
-    "- Could this be a side effect owned by another category? If yes, do not count it here.",
+    "Changes:",
+    formatChangeList(changes),
     "",
-    "Prompt packet:",
-    JSON.stringify(promptInput, null, 2)
+    "Template catalog:",
+    buildScopedCatalog(changes, fullCatalog),
   ].join("\n");
+}
+
+export function buildPrompts(
+  promptPacket: PromptPacket,
+  templateCatalog: TemplatePromptCatalog
+): {
+  systemPrompt: string;
+  userPrompt: string;
+  preview: string;
+} {
+  const changes = extractChanges(promptPacket);
+  const systemPrompt = buildSystemPrompt();
+  const userPrompt = buildUserPrompt(changes, templateCatalog);
 
   return {
     systemPrompt,
     userPrompt,
-    preview: `SYSTEM:\n${systemPrompt}\n\nUSER:\n${userPrompt}`
+    preview: `SYSTEM:\n${systemPrompt}\n\nUSER:\n${userPrompt}`,
   };
 }

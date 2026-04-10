@@ -5,6 +5,12 @@ export type CategoryName =
   | "Tags & Emphasis"
   | "Segmentation";
 
+export type FeedbackItem = {
+  category: CategoryName;
+  score: number;
+  note: string;
+};
+
 export type Annotation = {
   id: string;
   reviewActionId: string;
@@ -41,22 +47,34 @@ export type NormalizedState = {
   capturedAt: string;
 };
 
-export type EditSeverity = "minor" | "material" | "severe";
-
-export type PromptSample = {
-  kind: string;
-  severity: EditSeverity;
-  annotationId: string;
-  linkedAnnotationId?: string;
-  note: string;
-  before?: string;
-  after?: string;
+export type PromptTextDiff = {
+  before: string;
+  after: string;
+  fullBefore?: string;
+  fullAfter?: string;
+  /** Compact inline diff: "...context [-old+new] context..." */
+  inlineDiff?: string;
+  /** Number of discrete word-level edits */
+  editCount?: number;
 };
 
-export type PromptCategoryEvidence = {
-  count: number;
-  dominantKinds: string[];
-  samples: PromptSample[];
+export type ChangeEvidence =
+  | {
+      kind: "text-diff";
+      before: string;
+      after: string;
+      inlineDiff?: string;
+    }
+  | {
+      kind: "raw";
+      text: string;
+    };
+
+export type PromptSegmentSample = {
+  id: string;
+  text: string;
+  startTimeInSeconds: number;
+  endTimeInSeconds: number;
 };
 
 export type PromptPacket = {
@@ -65,29 +83,163 @@ export type PromptPacket = {
     metricsVersion: string;
     promptVersion: string;
   };
-  editFootprint: {
-    stableMatchedSegments: number;
-    changedSegments: number;
-    changedSegmentRatio: number;
+  overview: {
+    originalSegments: number;
+    currentSegments: number;
+    originalWords: number;
+    currentWords: number;
     segmentCountDelta: number;
-    isMicroEdit: boolean;
+    localTextChangeCount: number;
+    hasStructuralDiff: boolean;
   };
-  ownershipSummary: {
-    wordOwned: number;
-    timestampOwned: number;
-    punctuationOwned: number;
-    tagsOwned: number;
-    segmentationOwned: number;
+  localTextEvidence: {
+    changedPairs: PromptTextDiff[];
+    originalOnlySamples: PromptSegmentSample[];
+    currentOnlySamples: PromptSegmentSample[];
   };
-  categoryEvidence: {
-    wordAccuracy: PromptCategoryEvidence;
-    timestampAccuracy: PromptCategoryEvidence;
-    punctuationFormatting: PromptCategoryEvidence;
-    tagsEmphasis: PromptCategoryEvidence;
-    segmentation: PromptCategoryEvidence;
+  structuralDiff?: {
+    segmentation: {
+      overview: {
+        mappingCount: number;
+        unchangedCount: number;
+        modifiedCount: number;
+        splitCount: number;
+        mergeCount: number;
+        addedCount: number;
+        deletedCount: number;
+      };
+      samples: Array<{
+        relationship: string;
+        structuralSeverity: string;
+        referenceText: string;
+        hypothesisText: string;
+        referenceSegmentCount: number;
+        hypothesisSegmentCount: number;
+        substitutions: number;
+        insertions: number;
+        deletions: number;
+        changedTokens: Array<{
+          value: string;
+          status: string;
+        }>;
+        referenceSegments: Array<{
+          annotationId: string;
+          text: string;
+          startTimeInSeconds: number | null;
+          endTimeInSeconds: number | null;
+          wordRange: [number, number] | null;
+        }>;
+        hypothesisSegments: Array<{
+          annotationId: string;
+          text: string;
+          startTimeInSeconds: number | null;
+          endTimeInSeconds: number | null;
+          wordRange: [number, number] | null;
+        }>;
+      }>;
+    };
+    timestamp: {
+      overview: {
+        precision: number | null;
+        recall: number | null;
+        f1: number | null;
+        totalSegments: number | null;
+        matchedSegments: number | null;
+        unmatchedSegments: number | null;
+        avgShiftMs: number | null;
+        within50ms: number | null;
+        within100ms: number | null;
+        within200ms: number | null;
+      };
+      samples: Array<{
+        refText: string;
+        hypText: string;
+        startShiftMs: number;
+        endShiftMs: number;
+        avgShiftMs: number;
+        quality: string;
+      }>;
+    };
   };
-  scoreCaps: Record<CategoryName, 1 | 2 | 3>;
 };
+
+export type BabelDiffPayload = {
+  reviewActionsPayload?: unknown;
+  diffPayload?: unknown;
+  referenceReviewActionId?: string;
+  currentReviewActionId?: string;
+  transcriptionChunkId?: string;
+  reviewActionsUrl?: string;
+  diffUrl?: string;
+  capturedAt?: string;
+};
+
+export type TemplateCategory = CategoryName;
+
+export type TemplateDefinition = {
+  id: string;
+  title: string;
+  description: string;
+  reportTexts: string[];
+  priority: number;
+  enabled: boolean;
+};
+
+export type ReviewTemplate = TemplateDefinition & {
+  category: TemplateCategory;
+};
+
+export type TemplateRegistryFile = {
+  category: TemplateCategory;
+  version: number;
+  defaultText: string;
+  templates: TemplateDefinition[];
+};
+
+export type TemplatePromptEntry = {
+  id: string;
+  description: string;
+};
+
+export type TemplatePromptCatalog = Record<TemplateCategory, TemplatePromptEntry[]>;
+
+export type TemplateSelectionResponse = {
+  findings: string[];
+};
+
+export type ChangeType =
+  | "TEXT CHANGE"
+  | "TIMESTAMP SHIFT"
+  | "SEG ADDED"
+  | "SEG DELETED"
+  | "SEG SPLIT"
+  | "SEG MERGED";
+
+export type Change = {
+  index: number;
+  type: ChangeType;
+  categories: CategoryName[];
+  summary: string;
+  /** Compact evidence shown to the LLM (inline diff or structured summary) */
+  evidence: string;
+  evidenceDetail?: ChangeEvidence;
+  description: string;
+};
+
+export type ClassificationResponse = {
+  classifications: Array<{
+    change: number;
+    templateId: string;
+  }>;
+};
+
+export type ReviewClassification = ClassificationResponse["classifications"][number];
+
+export type TemplateMatchSource =
+  | "model"
+  | "manual"
+  | "manual_cleared"
+  | "unmatched";
 
 export type PreparedPayload = {
   preparedAt: string;
@@ -106,18 +258,146 @@ export type PreparedPayload = {
 export type GenerateResponse = {
   prepared: PreparedPayload;
   llm: {
-    feedback: Array<{
-      category: CategoryName;
-      score: number;
-      note: string;
-    }>;
+    feedback: FeedbackItem[];
     rawContent: string;
     model: string;
     latencyMs: number;
     receivedAt: string;
+    matchedTemplateIds: string[];
+    classifications: ReviewClassification[];
+    templateRegistryVersion: string;
     repaired?: boolean;
   };
 };
+
+export type ReviewSessionCard = {
+  id: string;
+  changeIndex: number;
+  type: ChangeType;
+  summary: string;
+  /** Compact evidence: the exact diff/summary the LLM classified */
+  evidence: string;
+  evidenceDetail?: ChangeEvidence;
+  categories: CategoryName[];
+  matchedTemplateId: string | null;
+  templateTitle: string | null;
+  templateDescription: string | null;
+  initialMatchedTemplateId: string | null;
+  initialTemplateTitle: string | null;
+  initialTemplateDescription: string | null;
+  matchSource: TemplateMatchSource;
+  opinionText: string;
+  rationale: string;
+};
+
+export type TemplateSearchResult = {
+  id: string;
+  title: string;
+  description: string;
+  category: CategoryName;
+  reportTexts: string[];
+  score: number;
+};
+
+export type TemplateSearchResponse = {
+  query: string;
+  results: TemplateSearchResult[];
+};
+
+export type TemplateSuggestionOperation =
+  | "create_template"
+  | "update_template"
+  | "disable_template";
+
+export type TemplateSuggestionDecision = "pending" | "approved" | "rejected";
+
+export type TemplateSuggestionProposal = {
+  proposalId: string;
+  operation: TemplateSuggestionOperation;
+  category: CategoryName;
+  targetTemplateId?: string;
+  title: string;
+  description: string;
+  reportTexts: string[];
+  reason: string;
+  sourceCardIds: string[];
+  decision: TemplateSuggestionDecision;
+  decidedAt?: string;
+};
+
+export type ReviewSessionComments = {
+  sessionComment: string;
+  cardComments: Record<string, string>;
+};
+
+export type BackendVersionInfo = {
+  service: string;
+  release: string;
+  apiSchema: number;
+  evidenceSchema: number;
+};
+
+export type ReviewSessionRecord = {
+  sessionId: string;
+  createdAt: string;
+  updatedAt: string;
+  reviewActionId: string;
+  original: NormalizedState;
+  current: NormalizedState;
+  babelDiff?: BabelDiffPayload | null;
+  prepared: PreparedPayload;
+  changes: Change[];
+  cards: ReviewSessionCard[];
+  categoryFeedback: FeedbackItem[];
+  matchedTemplateIds: string[];
+  classifications: ReviewClassification[];
+  comments: ReviewSessionComments;
+  proposals: TemplateSuggestionProposal[];
+};
+
+export type CreateReviewSessionResponse = {
+  sessionId: string;
+  reviewActionId: string;
+  backendVersion: BackendVersionInfo;
+  prepared: PreparedPayload;
+  changes: Change[];
+  cards: ReviewSessionCard[];
+  categoryFeedback: FeedbackItem[];
+  comments: ReviewSessionComments;
+  suggestions: TemplateSuggestionProposal[];
+  proposals: TemplateSuggestionProposal[];
+  aiReview: GenerateResponse["llm"];
+};
+
+export type FinalizeReviewSessionResponse = {
+  sessionId: string;
+  reviewActionId: string;
+  backendVersion: BackendVersionInfo;
+  categoryFeedback: FeedbackItem[];
+  appliedAt: string;
+  mode: "skip" | "apply";
+  aiReview: GenerateResponse["llm"] | null;
+};
+
+export type PendingTemplateProposalQueueItem = {
+  queueId: string;
+  approvedAt: string;
+  sessionId: string;
+  reviewActionId: string;
+  proposal: TemplateSuggestionProposal;
+};
+
+export type AnalyticsEventType =
+  | "review_generate"
+  | "submit_transcript_review_action"
+  | "review_session_created"
+  | "review_session_opened"
+  | "review_card_commented"
+  | "template_suggestions_generated"
+  | "template_suggestion_approved"
+  | "template_suggestion_rejected"
+  | "interactive_session_skipped"
+  | "interactive_review_applied";
 
 export type SubmitTranscriptReviewAnalyticsResponse = {
   ok: true;
@@ -125,3 +405,5 @@ export type SubmitTranscriptReviewAnalyticsResponse = {
   reviewActionId: string;
   prepared: PreparedPayload;
 };
+
+
