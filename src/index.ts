@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
 import {
@@ -127,16 +128,16 @@ function assertSubmitTranscriptReviewActionBody(
   body: unknown
 ): asserts body is SubmitTranscriptReviewActionBody {
   assertPrepareBody(body);
-  if (!isObject(body)) {
-    throw new Error("Body must be an object.");
-  }
-  if (body.inputBoxes !== undefined && !isObject(body.inputBoxes)) {
+  const candidate = body as SubmitTranscriptReviewActionBody;
+  if (candidate.inputBoxes !== undefined && !isObject(candidate.inputBoxes)) {
     throw new Error("inputBoxes must be an object when provided.");
   }
-  if (body.metadata !== undefined && !isObject(body.metadata)) {
+  if (candidate.metadata !== undefined && !isObject(candidate.metadata)) {
     throw new Error("metadata must be an object when provided.");
   }
 }
+
+const PRIVACY_PAGE_PATH = fileURLToPath(new URL("./public/privacy.html", import.meta.url));
 
 const app = new Elysia()
   .use(
@@ -150,8 +151,10 @@ const app = new Elysia()
     ok: true,
     service: "babel-review-backend",
     docs: "/health",
+    privacy: "/privacy",
     now: new Date().toISOString()
   }))
+  .get("/privacy", () => Bun.file(PRIVACY_PAGE_PATH))
   .get("/health", async () => {
     const credits = await fetchOpenRouterCredits(config.openRouterApiKey);
     return {

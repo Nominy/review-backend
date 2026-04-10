@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Babel Review Helper Privacy Policy</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f3ee;
+        --surface: #ffffff;
+        --line: #e7e3dc;
+        --ink: #1d2430;
+        --muted: #5b6473;
+        --accent: #e8612d;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at top left, rgba(232, 97, 45, 0.14), transparent 28%),
+          radial-gradient(circle at top right, rgba(51, 102, 204, 0.08), transparent 24%),
+          var(--bg);
+        color: var(--ink);
+        font: 16px/1.65 "Segoe UI", Inter, Arial, sans-serif;
+      }
+
+      main {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 48px 20px 72px;
+      }
+
+      .hero {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        padding: 32px;
+        box-shadow: 0 20px 60px rgba(31, 38, 48, 0.08);
+      }
+
+      .eyebrow {
+        display: inline-block;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(232, 97, 45, 0.1);
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 18px 0 12px;
+        font-size: 40px;
+        line-height: 1.08;
+      }
+
+      .lede {
+        margin: 0;
+        max-width: 720px;
+        color: var(--muted);
+        font-size: 18px;
+      }
+
+      .meta {
+        margin-top: 18px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .section {
+        margin-top: 28px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 26px 28px;
+      }
+
+      h2 {
+        margin: 0 0 12px;
+        font-size: 22px;
+      }
+
+      p,
+      li {
+        color: var(--muted);
+      }
+
+      ul {
+        margin: 10px 0 0 20px;
+      }
+
+      a {
+        color: var(--accent);
+      }
+
+      .footer {
+        margin-top: 28px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      @media (max-width: 720px) {
+        main {
+          padding: 24px 14px 48px;
+        }
+
+        .hero,
+        .section {
+          padding: 22px 18px;
+          border-radius: 18px;
+        }
+
+        h1 {
+          font-size: 32px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <div class="eyebrow">Privacy Policy</div>
+        <h1>Babel Review Helper</h1>
+        <p class="lede">
+          Babel Review Helper is a browser extension used to support reviewers working in the Babel
+          dashboard. This page explains what review-related data is processed, how it is used, and
+          what is disabled by default in the Chrome Web Store release.
+        </p>
+        <div class="meta">Last updated: 2026-04-10</div>
+      </section>
+
+      <section class="section">
+        <h2>Data the extension processes</h2>
+        <p>
+          The extension processes review-related information visible on
+          <strong>https://dashboard.babel.audio/*</strong>, including review action payloads,
+          reviewer comments, and workflow metadata required to generate or apply review feedback.
+        </p>
+      </section>
+
+      <section class="section">
+        <h2>How data is used</h2>
+        <p>The extension sends the minimum workflow data required to the configured backend so it can:</p>
+        <ul>
+          <li>generate category-specific review feedback</li>
+          <li>create and reopen interactive review sessions</li>
+          <li>save reviewer comments during an interactive session</li>
+          <li>finalize a review and return feedback for application inside Babel</li>
+        </ul>
+        <p>
+          The Chrome Web Store release build is locked to the production backend at
+          <strong>https://reviewgen.ovh</strong>.
+        </p>
+      </section>
+
+      <section class="section">
+        <h2>AI processing</h2>
+        <p>
+          The backend may use OpenRouter-backed language models to analyze review changes and
+          generate template-backed feedback. This may include review text and related structured
+          review metadata needed for the review-helper workflow.
+        </p>
+      </section>
+
+      <section class="section">
+        <h2>Local storage</h2>
+        <p>
+          The extension stores settings and session coordination data in
+          <strong>chrome.storage.local</strong> so the workflow can continue between extension pages.
+        </p>
+      </section>
+
+      <section class="section">
+        <h2>Logging and retention</h2>
+        <p>
+          Backend analytics logging and raw review text-pair logging are disabled by default in the
+          Chrome Web Store release configuration. When disabled, the backend does not retain those
+          optional analytics records. Operational session data may still be stored as required for
+          the interactive review workflow.
+        </p>
+      </section>
+
+      <section class="section">
+        <h2>Sharing</h2>
+        <p>
+          Data is processed only for the review-assistance workflow described above. It is not sold
+          or shared for advertising.
+        </p>
+      </section>
+
+      <section class="section">
+        <h2>Contact</h2>
+        <p>
+          For operational questions about the extension deployment, contact the team responsible for
+          the Babel Review Helper service.
+        </p>
+      </section>
+
+      <div class="footer">
+        Public privacy URL for the Chrome Web Store listing:
+        <a href="/privacy">https://reviewgen.ovh/privacy</a>
+      </div>
+    </main>
+  </body>
+</html>
