@@ -1,4 +1,10 @@
 import type { LoadedTemplateRegistry } from "./template-registry";
+import {
+  normalizeContent,
+  parseMaybeJson,
+  requestOpenRouterChat,
+  type OpenRouterMessage
+} from "./shared/openrouter-client";
 import type { ReviewClassification, TemplateSelectionResponse } from "./types";
 
 type SendArgs = {
@@ -10,40 +16,6 @@ type SendArgs = {
   };
   registry: LoadedTemplateRegistry;
 };
-
-type OpenRouterMessage = {
-  role: string;
-  content: string;
-};
-
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-
-function parseMaybeJson(text: string): unknown | null {
-  if (typeof text !== "string") return null;
-  const trimmed = text.trim();
-  if (!trimmed) return null;
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    return null;
-  }
-}
-
-function normalizeContent(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (typeof part === "string") return part;
-        if (part && typeof part === "object" && "text" in part && typeof part.text === "string") {
-          return part.text;
-        }
-        return "";
-      })
-      .join("");
-  }
-  return typeof content === "undefined" ? "" : JSON.stringify(content);
-}
 
 export function parseModelJson(text: string): unknown {
   const direct = parseMaybeJson(text);
@@ -134,42 +106,13 @@ export async function requestOpenRouter(
   messages: OpenRouterMessage[],
   temperature = 0.2
 ): Promise<string> {
-  const response = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "X-Title": "Babel Review Assistant"
-    },
-    body: JSON.stringify({
-      model,
-      temperature,
-      stream: false,
-      response_format: { type: "json_object" },
-      provider: {
-        sort: "latency",
-        allow_fallbacks: true,
-        require_parameters: true
-      },
-      messages
-    })
+  return requestOpenRouterChat({
+    apiKey,
+    model,
+    messages,
+    temperature,
+    title: "Babel Review Assistant"
   });
-
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(`OpenRouter HTTP ${response.status}: ${text.slice(0, 300)}`);
-  }
-
-  const json = parseMaybeJson(text) as Record<string, unknown> | null;
-  if (!json) {
-    throw new Error("OpenRouter returned non-JSON payload.");
-  }
-
-  return normalizeContent(
-    ((json.choices as Array<Record<string, unknown>> | undefined)?.[0]?.message as
-      | Record<string, unknown>
-      | undefined)?.content
-  );
 }
 
 export async function sendToOpenRouter(args: SendArgs): Promise<{
