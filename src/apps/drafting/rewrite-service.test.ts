@@ -66,4 +66,23 @@ describe("generateDraft", () => {
     expect(response.draftRows[1].status).toBe("failed");
     expect(response.draftRows[1].warnings[0]).toBe("rewrite_error");
   });
+
+  test("passes only the current row into the rewrite context", async () => {
+    const seenContexts: RowRewriteContext[] = [];
+
+    await generateDraft(baseRequest, {
+      rewriteRow: async (context: RowRewriteContext) => {
+        seenContexts.push(context);
+        return `${context.currentRow.text}.`;
+      }
+    });
+
+    expect(seenContexts).toHaveLength(2);
+    expect(seenContexts[0]).toEqual({
+      currentRow: baseRequest.rows[0]
+    });
+    expect(seenContexts[1]).toEqual({
+      currentRow: baseRequest.rows[1]
+    });
+  });
 });

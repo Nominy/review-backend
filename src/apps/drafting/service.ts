@@ -7,8 +7,7 @@ import type {
   DraftSummary,
   GenerateDraftRequest,
   GenerateDraftResponse,
-  RowRewriteContext,
-  DraftingTranscriptRowInput
+  RowRewriteContext
 } from "./types";
 import { validateRewrittenRow } from "./validators";
 
@@ -48,19 +47,6 @@ function summarizeDraftRows(draftRows: DraftRowResult[]): DraftSummary {
   };
 }
 
-function buildRewriteContext(
-  rows: DraftingTranscriptRowInput[],
-  index: number,
-  acceptedRows: DraftRowResult[]
-): RowRewriteContext {
-  return {
-    previousOriginalRows: rows.slice(Math.max(0, index - 2), index),
-    previousRewrittenRows: acceptedRows.slice(Math.max(0, acceptedRows.length - 2)),
-    currentRow: rows[index],
-    nextOriginalRows: rows.slice(index + 1, index + 3)
-  };
-}
-
 export async function generateDraft(
   request: GenerateDraftRequest,
   deps: GenerateDraftDeps = {}
@@ -84,7 +70,9 @@ export async function generateDraft(
 
   const draftRows: DraftRowResult[] = [];
   for (let index = 0; index < request.rows.length; index += 1) {
-    const context = buildRewriteContext(request.rows, index, draftRows);
+    const context: RowRewriteContext = {
+      currentRow: request.rows[index]
+    };
     const originalRow = context.currentRow;
 
     let candidate = originalRow.text;

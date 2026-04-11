@@ -70,10 +70,7 @@ export interface LoadedProjectPreset {
 }
 
 export interface RowRewriteContext {
-  previousOriginalRows: DraftingTranscriptRowInput[];
-  previousRewrittenRows: DraftRowResult[];
   currentRow: DraftingTranscriptRowInput;
-  nextOriginalRows: DraftingTranscriptRowInput[];
 }
 
 export interface RowValidationResult {
