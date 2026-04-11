@@ -21,4 +21,9 @@ Thumbs.db
 # Local artifact accidentally generated in this workspace.
 NUL
 data/
+!src/apps/drafting/data/
+!src/apps/drafting/data/examples/
+!src/apps/drafting/data/examples/*.json
+!src/apps/drafting/data/rule-packs/
+!src/apps/drafting/data/rule-packs/*.json
 /templates
