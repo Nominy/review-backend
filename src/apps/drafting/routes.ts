@@ -4,6 +4,11 @@ import { generateDraft } from "./service";
 import type { DraftingTranscriptRowInput, GenerateDraftRequest } from "./types";
 
 type AnyElysia = Elysia<any, any, any, any, any, any, any>;
+const encoder = new TextEncoder();
+
+function toSseChunk(event: string, data: unknown): Uint8Array {
+  return encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+}
 
 function isRow(value: unknown): value is DraftingTranscriptRowInput {
   return (
@@ -43,6 +48,60 @@ export function registerDraftingRoutes(app: AnyElysia): AnyElysia {
       set.status = message.includes("required") || message.includes("must") || message.includes("Body") ? 400 : 500;
       return { error: message };
     }
+  });
+
+  app.post("/api/draft/generate/stream", async ({ body, set }) => {
+    try {
+      assertGenerateDraftBody(body);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      set.status = message.includes("required") || message.includes("must") || message.includes("Body") ? 400 : 500;
+      return { error: message };
+    }
+
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        controller.enqueue(
+          toSseChunk("started", {
+            jobId: body.jobId,
+            totalRows: body.rows.length
+          })
+        );
+
+        try {
+          const response = await generateDraft(body, {
+            onRowComplete: async ({ row, completedRows, totalRows, summary }) => {
+              controller.enqueue(
+                toSseChunk("row", {
+                  row,
+                  completedRows,
+                  totalRows,
+                  summary
+                })
+              );
+            }
+          });
+
+          controller.enqueue(toSseChunk("done", response));
+        } catch (error) {
+          controller.enqueue(
+            toSseChunk("error", {
+              error: error instanceof Error ? error.message : String(error)
+            })
+          );
+        } finally {
+          controller.close();
+        }
+      }
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive"
+      }
+    });
   });
 
   return app;

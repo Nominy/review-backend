@@ -16,6 +16,12 @@ type GenerateDraftDeps = {
   model?: string;
   testMode?: boolean;
   apiKey?: string;
+  onRowComplete?: (args: {
+    row: DraftRowResult;
+    completedRows: number;
+    totalRows: number;
+    summary: DraftSummary;
+  }) => void | Promise<void>;
 };
 
 function summarizeDraftRows(draftRows: DraftRowResult[]): DraftSummary {
@@ -79,22 +85,40 @@ export async function generateDraft(
     try {
       candidate = await rewriteRow(context);
     } catch (error) {
-      draftRows.push({
+      const rowResult: DraftRowResult = {
         rowId: originalRow.rowId,
         rewrittenText: originalRow.text,
         status: "failed",
         warnings: ["rewrite_error", error instanceof Error ? error.message : String(error)]
-      });
+      };
+      draftRows.push(rowResult);
+      if (deps.onRowComplete) {
+        await deps.onRowComplete({
+          row: rowResult,
+          completedRows: draftRows.length,
+          totalRows: request.rows.length,
+          summary: summarizeDraftRows(draftRows)
+        });
+      }
       continue;
     }
 
     const validation = validateRewrittenRow(originalRow.text, candidate);
-    draftRows.push({
+    const rowResult: DraftRowResult = {
       rowId: originalRow.rowId,
       rewrittenText: validation.acceptedText,
       status: validation.status,
       warnings: validation.warnings
-    });
+    };
+    draftRows.push(rowResult);
+    if (deps.onRowComplete) {
+      await deps.onRowComplete({
+        row: rowResult,
+        completedRows: draftRows.length,
+        totalRows: request.rows.length,
+        summary: summarizeDraftRows(draftRows)
+      });
+    }
   }
 
   return {

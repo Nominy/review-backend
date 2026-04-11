@@ -85,4 +85,25 @@ describe("generateDraft", () => {
       currentRow: baseRequest.rows[1]
     });
   });
+
+  test("emits row progress as each row completes", async () => {
+    const events: Array<{ rowId: string; completedRows: number; failedRows: number }> = [];
+
+    await generateDraft(baseRequest, {
+      rewriteRow: async (context: RowRewriteContext) =>
+        context.currentRow.rowId === "r1" ? `${context.currentRow.text}.` : "",
+      onRowComplete: async ({ row, completedRows, summary }) => {
+        events.push({
+          rowId: row.rowId,
+          completedRows,
+          failedRows: summary.failedRows
+        });
+      }
+    });
+
+    expect(events).toEqual([
+      { rowId: "r1", completedRows: 1, failedRows: 0 },
+      { rowId: "r2", completedRows: 2, failedRows: 1 }
+    ]);
+  });
 });
