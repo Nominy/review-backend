@@ -61,4 +61,14 @@ describe("createApp", () => {
     expect(response.status).toBe(400);
     expect(payload.error).toContain("projectPreset");
   });
+
+  it("serves the dedicated gold drafting privacy page", async () => {
+    const response = await createApp().handle(new Request("http://localhost/gold-drafting-privacy"));
+    const html = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    expect(html).toContain("Babel Gold Drafting");
+    expect(html).toContain("https://reviewgen.ovh/gold-drafting-privacy");
+  });
 });

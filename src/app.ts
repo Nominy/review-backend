@@ -8,6 +8,9 @@ import { fetchOpenRouterCredits } from "./shared/openrouter-client";
 import { BACKEND_VERSION } from "./version";
 
 const PRIVACY_PAGE_PATH = fileURLToPath(new URL("./public/privacy.html", import.meta.url));
+const GOLD_DRAFTING_PRIVACY_PAGE_PATH = fileURLToPath(
+  new URL("./public/gold-drafting-privacy.html", import.meta.url)
+);
 type AnyElysia = Elysia<any, any, any, any, any, any, any>;
 
 export function createApp(): AnyElysia {
@@ -24,9 +27,11 @@ export function createApp(): AnyElysia {
       service: "babel-review-backend",
       docs: "/health",
       privacy: "/privacy",
+      goldDraftingPrivacy: "/gold-drafting-privacy",
       now: new Date().toISOString()
     }))
     .get("/privacy", () => Bun.file(PRIVACY_PAGE_PATH))
+    .get("/gold-drafting-privacy", () => Bun.file(GOLD_DRAFTING_PRIVACY_PAGE_PATH))
     .get("/health", async () => {
       const credits = await fetchOpenRouterCredits(config.openRouterApiKey);
       return {
