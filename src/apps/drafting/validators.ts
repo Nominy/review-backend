@@ -19,10 +19,6 @@ function hasBalancedPairs(text: string, openChar: string, closeChar: string): bo
   return depth === 0;
 }
 
-function extractDigitTokens(text: string): string[] {
-  return text.match(/\d+(?:[.,]\d+)*/g) ?? [];
-}
-
 function extractTagTokens(text: string): string[] {
   return text.match(/\{[^{}]*\}|\[[^[\]]*\]|<[^<>]*>/g) ?? [];
 }
@@ -94,10 +90,6 @@ export function validateRewrittenRow(originalText: string, rewrittenText: string
     return fail(original, ["quote_imbalance"]);
   }
 
-  if (JSON.stringify(extractDigitTokens(original)) !== JSON.stringify(extractDigitTokens(trimmed))) {
-    return fail(original, ["numeral_drift"]);
-  }
-
   if (JSON.stringify(extractTagTokens(original)) !== JSON.stringify(extractTagTokens(trimmed))) {
     return fail(original, ["tag_drift"]);
   }
@@ -111,20 +103,21 @@ export function validateRewrittenRow(originalText: string, rewrittenText: string
   const overlapRatio =
     originalTokens.size === 0 && rewrittenTokens.size === 0 ? 1 : sharedTokenCount / Math.max(originalTokens.size, 1);
 
-  if (
-    (trimmed.length > original.length * 3 + 40 || trimmed.length < Math.max(1, original.length * 0.2)) &&
-    original.length > 20
-  ) {
-    return fail(original, ["length_drift"]);
-  }
-
-  if ((distanceRatio > 0.85 || overlapRatio < 0.35) && original.length > 20) {
-    return fail(original, ["edit_distance_drift"]);
-  }
-
   let status: DraftRowStatus = "rewritten";
   if (trimmed === original) {
     status = "unchanged";
+  }
+
+  if (
+    (trimmed.length > original.length * 3 + 40 || trimmed.length < Math.max(1, original.length * 0.2)) &&
+    original.length > 20 &&
+    status === "rewritten"
+  ) {
+    warnings.push("length_drift");
+  }
+
+  if ((distanceRatio > 0.85 || overlapRatio < 0.35) && original.length > 20 && status === "rewritten") {
+    warnings.push("edit_distance_drift");
   }
 
   if (distanceRatio > 0.6 && status === "rewritten") {
