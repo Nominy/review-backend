@@ -16,6 +16,7 @@ type GenerateDraftDeps = {
   model?: string;
   testMode?: boolean;
   apiKey?: string;
+  maxAttemptsPerRow?: number;
   onRowComplete?: (args: {
     row: DraftRowResult;
     completedRows: number;
@@ -53,6 +54,31 @@ function summarizeDraftRows(draftRows: DraftRowResult[]): DraftSummary {
   };
 }
 
+function summarizeCompletedDraftRows(draftRows: Array<DraftRowResult | undefined>): DraftSummary {
+  return summarizeDraftRows(draftRows.filter((row): row is DraftRowResult => Boolean(row)));
+}
+
+async function rewriteRowWithRetry(
+  rewriteRow: (context: RowRewriteContext) => Promise<string>,
+  context: RowRewriteContext,
+  maxAttempts: number
+): Promise<string> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await rewriteRow(context);
+    } catch (error) {
+      lastError = error;
+      if (attempt >= maxAttempts) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
 export async function generateDraft(
   request: GenerateDraftRequest,
   deps: GenerateDraftDeps = {}
@@ -73,17 +99,20 @@ export async function generateDraft(
         systemPrompt,
         testMode
       }));
+  const maxAttemptsPerRow = Math.max(1, deps.maxAttemptsPerRow ?? 2);
 
-  const draftRows: DraftRowResult[] = [];
-  for (let index = 0; index < request.rows.length; index += 1) {
+  const draftRows: Array<DraftRowResult | undefined> = new Array(request.rows.length);
+  let completedRowCount = 0;
+
+  await Promise.all(request.rows.map(async (currentRow, index) => {
     const context: RowRewriteContext = {
-      currentRow: request.rows[index]
+      currentRow
     };
     const originalRow = context.currentRow;
 
     let candidate = originalRow.text;
     try {
-      candidate = await rewriteRow(context);
+      candidate = await rewriteRowWithRetry(rewriteRow, context, maxAttemptsPerRow);
     } catch (error) {
       const rowResult: DraftRowResult = {
         rowId: originalRow.rowId,
@@ -91,16 +120,17 @@ export async function generateDraft(
         status: "failed",
         warnings: ["rewrite_error", error instanceof Error ? error.message : String(error)]
       };
-      draftRows.push(rowResult);
+      draftRows[index] = rowResult;
+      completedRowCount += 1;
       if (deps.onRowComplete) {
         await deps.onRowComplete({
           row: rowResult,
-          completedRows: draftRows.length,
+          completedRows: completedRowCount,
           totalRows: request.rows.length,
-          summary: summarizeDraftRows(draftRows)
+          summary: summarizeCompletedDraftRows(draftRows)
         });
       }
-      continue;
+      return;
     }
 
     const validation = validateRewrittenRow(originalRow.text, candidate);
@@ -110,20 +140,23 @@ export async function generateDraft(
       status: validation.status,
       warnings: validation.warnings
     };
-    draftRows.push(rowResult);
+    draftRows[index] = rowResult;
+    completedRowCount += 1;
     if (deps.onRowComplete) {
       await deps.onRowComplete({
         row: rowResult,
-        completedRows: draftRows.length,
+        completedRows: completedRowCount,
         totalRows: request.rows.length,
-        summary: summarizeDraftRows(draftRows)
+        summary: summarizeCompletedDraftRows(draftRows)
       });
     }
-  }
+  }));
+
+  const completedDraftRows = draftRows.filter((row): row is DraftRowResult => Boolean(row));
 
   return {
-    draftRows,
-    summary: summarizeDraftRows(draftRows),
+    draftRows: completedDraftRows,
+    summary: summarizeDraftRows(completedDraftRows),
     generationMeta: {
       model: testMode ? `${model}:test-mode` : model,
       rulePackVersion: preset.version,

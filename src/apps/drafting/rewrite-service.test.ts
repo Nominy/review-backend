@@ -2,6 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { generateDraft } from "./service";
 import type { GenerateDraftRequest, RowRewriteContext } from "./types";
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 const baseRequest: GenerateDraftRequest = {
   projectPreset: "ru-gold-2sp-v1",
   jobId: "job-1",
@@ -105,5 +109,53 @@ describe("generateDraft", () => {
       { rowId: "r1", completedRows: 1, failedRows: 0 },
       { rowId: "r2", completedRows: 2, failedRows: 1 }
     ]);
+  });
+
+  test("keeps final draft rows in input order even when responses finish out of order", async () => {
+    const completionOrder: string[] = [];
+
+    const response = await generateDraft(baseRequest, {
+      rewriteRow: async (context: RowRewriteContext) => {
+        if (context.currentRow.rowId === "r1") {
+          await delay(20);
+          return "Privet.";
+        }
+        await delay(1);
+        return "Da.";
+      },
+      onRowComplete: async ({ row }) => {
+        completionOrder.push(row.rowId);
+      }
+    });
+
+    expect(completionOrder).toEqual(["r2", "r1"]);
+    expect(response.draftRows.map((row) => row.rowId)).toEqual(["r1", "r2"]);
+    expect(response.draftRows.map((row) => row.rewrittenText)).toEqual(["Privet.", "Da."]);
+  });
+
+  test("retries a failed row call once before succeeding", async () => {
+    const attempts = new Map<string, number>();
+
+    const response = await generateDraft(baseRequest, {
+      rewriteRow: async (context: RowRewriteContext) => {
+        const currentAttempts = (attempts.get(context.currentRow.rowId) || 0) + 1;
+        attempts.set(context.currentRow.rowId, currentAttempts);
+
+        if (context.currentRow.rowId === "r1" && currentAttempts === 1) {
+          throw new Error("temporary upstream failure");
+        }
+
+        return `${context.currentRow.text}.`;
+      }
+    });
+
+    expect(attempts.get("r1")).toBe(2);
+    expect(attempts.get("r2")).toBe(1);
+    expect(response.draftRows[0]).toEqual({
+      rowId: "r1",
+      rewrittenText: "privet.",
+      status: "rewritten",
+      warnings: ["length_delta"]
+    });
   });
 });
