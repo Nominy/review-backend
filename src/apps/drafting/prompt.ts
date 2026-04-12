@@ -1,7 +1,5 @@
 import type { LoadedProjectPreset, RowRewriteContext } from "./types";
 
-const RESPONSE_SCHEMA = "{\"rewrittenText\":\"...\"}";
-
 export function buildSystemPrompt(preset: LoadedProjectPreset): string {
   const exampleLines = preset.examples
     .map((example, index) =>
@@ -28,8 +26,8 @@ export function buildSystemPrompt(preset: LoadedProjectPreset): string {
     exampleLines,
     "",
     "Формат ответа:",
-    "- Верни строго JSON.",
-    `- Используй ровно такую схему: ${RESPONSE_SCHEMA}`,
+    "- Верни только готовую Gold-строку целиком, обычным текстом.",
+    "- Не используй JSON, markdown, пояснения, префиксы или кавычки вокруг всей строки.",
     "- Не добавляй никакого лишнего текста."
   ].join("\n");
 }

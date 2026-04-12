@@ -34,17 +34,15 @@ export function parseResponseText(content: string): string {
   const normalized = stripCodeFences(content);
 
   try {
-    return tryParseJsonResponse(normalized) ?? normalized;
+    const parsed = tryParseJsonResponse(normalized);
+    return typeof parsed === "string" ? parsed : normalized;
   } catch (error) {
     const recovered = tryRecoverSingleFieldResponse(normalized);
     if (typeof recovered === "string") {
       return recovered;
     }
 
-    if (error instanceof Error) {
-      throw new Error(`JSON Parse error: ${error.message}`);
-    }
-    throw error;
+    return normalized;
   }
 }
 

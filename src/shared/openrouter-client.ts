@@ -66,7 +66,6 @@ export async function requestOpenRouterChat(args: {
       model: args.model,
       temperature: args.temperature ?? 0.2,
       stream: false,
-      response_format: { type: "json_object" },
       reasoning: args.reasoningEffort
         ? {
             effort: args.reasoningEffort,
