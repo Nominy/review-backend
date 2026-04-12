@@ -91,7 +91,7 @@ export function validateRewrittenRow(originalText: string, rewrittenText: string
   }
 
   if (JSON.stringify(extractTagTokens(original)) !== JSON.stringify(extractTagTokens(trimmed))) {
-    return fail(original, ["tag_drift"]);
+    warnings.push("tag_drift");
   }
 
   const maxLength = Math.max(original.length, trimmed.length, 1);

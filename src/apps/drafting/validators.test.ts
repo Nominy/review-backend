@@ -13,15 +13,22 @@ describe("validateRewrittenRow", () => {
     });
   });
 
-  test("fails when markup tags drift", () => {
+  test("keeps tag drift as a warning instead of failing the row", () => {
     const result = validateRewrittenRow("{music} привет", "привет");
 
-    expect(result).toEqual({
-      acceptedText: "{music} привет",
-      status: "failed",
-      warnings: ["tag_drift"],
-      usedFallback: true
-    });
+    expect(result.status).toBe("rewritten");
+    expect(result.usedFallback).toBe(false);
+    expect(result.acceptedText).toBe("привет");
+    expect(result.warnings).toContain("tag_drift");
+  });
+
+  test("allows SKAZ normalization braces without failing the row", () => {
+    const result = validateRewrittenRow("у меня 123 яблока", "У меня 123 {СКАЗ: сто двадцать три} яблока.");
+
+    expect(result.status).toBe("rewritten");
+    expect(result.usedFallback).toBe(false);
+    expect(result.acceptedText).toBe("У меня 123 {СКАЗ: сто двадцать три} яблока.");
+    expect(result.warnings).toContain("tag_drift");
   });
 
   test("keeps large rewrites as warnings instead of failing the row", () => {
