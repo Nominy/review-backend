@@ -74,7 +74,7 @@ export async function rewriteRowWithModel(
       { role: "system", content: deps.systemPrompt },
       { role: "user", content: userPrompt }
     ],
-    providerSort: "price",
+    providerSort: "latency",
     reasoningEffort: "low",
     temperature: 0.15,
     title: "Babel Gold Drafting"
