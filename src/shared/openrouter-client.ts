@@ -5,6 +5,9 @@ export type OpenRouterMessage = {
   content: string;
 };
 
+export type OpenRouterReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+export type OpenRouterProviderSort = "price" | "throughput" | "latency";
+
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_CREDITS_URL = "https://openrouter.ai/api/v1/credits";
 
@@ -48,6 +51,8 @@ export async function requestOpenRouterChat(args: {
   model: string;
   messages: OpenRouterMessage[];
   temperature?: number;
+  reasoningEffort?: OpenRouterReasoningEffort;
+  providerSort?: OpenRouterProviderSort;
   title: string;
 }): Promise<string> {
   const response = await fetch(OPENROUTER_URL, {
@@ -62,8 +67,14 @@ export async function requestOpenRouterChat(args: {
       temperature: args.temperature ?? 0.2,
       stream: false,
       response_format: { type: "json_object" },
+      reasoning: args.reasoningEffort
+        ? {
+            effort: args.reasoningEffort,
+            exclude: true
+          }
+        : undefined,
       provider: {
-        sort: "latency",
+        sort: args.providerSort ?? "latency",
         allow_fallbacks: true,
         require_parameters: true
       },
