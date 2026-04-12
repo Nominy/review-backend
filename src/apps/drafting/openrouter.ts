@@ -2,12 +2,50 @@ import { requestOpenRouterChat } from "../../shared/openrouter-client";
 import type { RowRewriteContext, RewriteRowDeps } from "./types";
 import { buildUserPrompt } from "./prompt";
 
-function parseResponseText(content: string): string {
+function stripCodeFences(content: string): string {
+  const trimmed = content.trim();
+  const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fencedMatch ? fencedMatch[1].trim() : trimmed;
+}
+
+function tryParseJsonResponse(content: string): string | null {
   const parsed = JSON.parse(content) as { rewrittenText?: unknown };
   if (!parsed || typeof parsed.rewrittenText !== "string") {
     throw new Error("Model response is not valid row rewrite JSON.");
   }
   return parsed.rewrittenText;
+}
+
+function tryRecoverSingleFieldResponse(content: string): string | null {
+  const match = content.match(/"rewrittenText"\s*:\s*"([\s\S]*)"\s*}\s*$/);
+  if (!match) {
+    return null;
+  }
+
+  return match[1]
+    .replace(/\\"/g, "\"")
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\r")
+    .replace(/\\t/g, "\t")
+    .replace(/\\\\/g, "\\");
+}
+
+export function parseResponseText(content: string): string {
+  const normalized = stripCodeFences(content);
+
+  try {
+    return tryParseJsonResponse(normalized) ?? normalized;
+  } catch (error) {
+    const recovered = tryRecoverSingleFieldResponse(normalized);
+    if (typeof recovered === "string") {
+      return recovered;
+    }
+
+    if (error instanceof Error) {
+      throw new Error(`JSON Parse error: ${error.message}`);
+    }
+    throw error;
+  }
 }
 
 function deterministicRewrite(text: string): string {
