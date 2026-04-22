@@ -2,6 +2,16 @@
 
 Server-side review engine for the extension.
 
+## Docs
+
+Durable review workflow and prompting material now lives in `docs/`:
+
+- `docs/review-feedback-spec.md`
+- `docs/prompts/master_prompt_ru.md`
+- `docs/reference/`
+
+This repo remains source-only. It does not publish packaged ZIP artifacts.
+
 ## Template Registry
 
 Issue templates are stored under `templates/` as five JSON files, one per review category:
