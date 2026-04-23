@@ -5,6 +5,7 @@ import { registerDraftingRoutes } from "./apps/drafting/routes";
 import { registerReviewRoutes } from "./apps/review/routes";
 import { config } from "./config";
 import { fetchOpenRouterCredits } from "./shared/openrouter-client";
+import { getBuildInfo } from "./build-info";
 import { BACKEND_VERSION } from "./version";
 
 const PRIVACY_PAGE_PATH = fileURLToPath(new URL("./public/privacy.html", import.meta.url));
@@ -38,6 +39,7 @@ export function createApp(): AnyElysia {
         ok: true,
         service: "babel-review-backend",
         backendVersion: BACKEND_VERSION,
+        build: getBuildInfo(),
         testMode: config.openRouterTestMode,
         now: new Date().toISOString(),
         openRouterCredits: credits

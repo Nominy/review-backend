@@ -60,7 +60,7 @@ jobs:
             -o StrictHostKeyChecking=accept-new \
             -o UserKnownHostsFile=/dev/null \
             "$SERVER_USER@$SERVER_HOST" \
-            "DEPLOY_PATH='$DEPLOY_PATH' OPENROUTER_API_KEY_B64='$openrouter_key_b64' bash -se" <<'REMOTE'
+            "DEPLOY_PATH='$DEPLOY_PATH' OPENROUTER_API_KEY_B64='$openrouter_key_b64' GIT_COMMIT='$GITHUB_SHA' GIT_BRANCH='$GITHUB_REF_NAME' bash -se" <<'REMOTE'
           set -euo pipefail
 
           cd "$DEPLOY_PATH"
@@ -83,8 +83,10 @@ jobs:
           touch .env.runtime
           chmod 600 .env.runtime
           tmp_env="$(mktemp)"
-          grep -v '^OPENROUTER_API_KEY=' .env.runtime > "$tmp_env" || true
+          awk '!/^(OPENROUTER_API_KEY|GIT_COMMIT|GIT_BRANCH)=/' .env.runtime > "$tmp_env"
           printf 'OPENROUTER_API_KEY=%s\n' "$(printf '%s' "$OPENROUTER_API_KEY_B64" | base64 -d)" >> "$tmp_env"
+          printf 'GIT_COMMIT=%s\n' "$GIT_COMMIT" >> "$tmp_env"
+          printf 'GIT_BRANCH=%s\n' "$GIT_BRANCH" >> "$tmp_env"
           mv "$tmp_env" .env.runtime
           chmod 600 .env.runtime
 
