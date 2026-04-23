@@ -2,6 +2,7 @@
   "name": "babel-review-backend",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "dev": "bun --no-env-file --watch src/index.ts",
