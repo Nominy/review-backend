@@ -14,7 +14,7 @@ This repo remains source-only. It does not publish packaged ZIP artifacts.
 
 ## Template Registry
 
-Issue templates are stored under `templates/` as five JSON files, one per review category:
+Runtime issue templates are stored under ignored `templates/` as five JSON files, one per review category:
 
 - `templates/word-accuracy.json`
 - `templates/timestamp-accuracy.json`
@@ -32,6 +32,8 @@ Each template entry now contains:
 - `enabled`
 
 The backend now asks the LLM to return only matching template IDs from this catalog. Final reviewer notes are assembled locally from the matching template strings, while `POST /api/review/generate` keeps the same five-card response shape for extension compatibility.
+
+Fresh checkouts seed `templates/` from committed defaults in `src/default-templates/`. Production edits made through Templates Lab stay local in ignored `templates/` and should not be committed.
 
 ## Run
 

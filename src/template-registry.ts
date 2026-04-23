@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CATEGORIES } from "./rules";
@@ -26,6 +26,7 @@ export type TemplateRegistryDiskSnapshot = Array<
 >;
 
 const TEMPLATE_DIR = fileURLToPath(new URL("../templates/", import.meta.url));
+const DEFAULT_TEMPLATE_DIR = fileURLToPath(new URL("./default-templates/", import.meta.url));
 
 const CATEGORY_FILE_NAMES: Record<CategoryName, string> = {
   "Word Accuracy": "word-accuracy.json",
@@ -181,10 +182,20 @@ function sortTemplates(left: ReviewTemplate, right: ReviewTemplate): number {
 }
 
 export function getTemplateFilePath(category: CategoryName): string {
+  ensureTemplateDirectory();
   return join(TEMPLATE_DIR, CATEGORY_FILE_NAMES[category]);
 }
 
+function ensureTemplateDirectory(): void {
+  if (existsSync(TEMPLATE_DIR)) {
+    return;
+  }
+  mkdirSync(TEMPLATE_DIR, { recursive: true });
+  cpSync(DEFAULT_TEMPLATE_DIR, TEMPLATE_DIR, { recursive: true });
+}
+
 export function readTemplateRegistryFiles(): TemplateRegistryDiskSnapshot {
+  ensureTemplateDirectory();
   const templateFiles = readdirSync(TEMPLATE_DIR, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
     .map((entry) => entry.name)

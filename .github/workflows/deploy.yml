@@ -1,0 +1,98 @@
+name: Deploy backend
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: review-backend-production
+  cancel-in-progress: false
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      SERVER_HOST: ${{ secrets.SERVER_HOST }}
+      SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
+      SERVER_USER: ${{ secrets.SERVER_USER }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test
+        run: bun test
+
+      - name: Validate deployment secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SERVER_HOST"
+          test -n "$SERVER_USER"
+          test -n "$SERVER_PASSWORD"
+          test -n "$DEPLOY_PATH"
+          test -n "$OPENROUTER_API_KEY"
+
+      - name: Deploy over SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y sshpass
+
+          export SSHPASS="$SERVER_PASSWORD"
+          openrouter_key_b64="$(printf '%s' "$OPENROUTER_API_KEY" | base64 -w0)"
+
+          sshpass -e ssh \
+            -o StrictHostKeyChecking=accept-new \
+            -o UserKnownHostsFile=/dev/null \
+            "$SERVER_USER@$SERVER_HOST" \
+            "DEPLOY_PATH='$DEPLOY_PATH' OPENROUTER_API_KEY_B64='$openrouter_key_b64' bash -se" <<'REMOTE'
+          set -euo pipefail
+
+          cd "$DEPLOY_PATH"
+
+          backup_root="/opt/review/backups"
+          backup_dir="$backup_root/review-backend-$(date -u +%Y%m%dT%H%M%SZ)"
+          mkdir -p "$backup_dir"
+          [ -f .env.runtime ] && cp -a .env.runtime "$backup_dir/.env.runtime"
+          [ -d data ] && cp -a data "$backup_dir/data"
+          [ -d templates ] && cp -a templates "$backup_dir/templates"
+
+          git fetch origin main
+          git reset --hard origin/main
+          git clean -fd -e .env.runtime -e data/ -e logs/ -e node_modules/ -e templates/
+
+          [ -d "$backup_dir/data" ] && cp -a "$backup_dir/data" ./data
+          [ -d "$backup_dir/templates" ] && cp -a "$backup_dir/templates" ./templates
+          mkdir -p logs/pm2
+
+          touch .env.runtime
+          chmod 600 .env.runtime
+          tmp_env="$(mktemp)"
+          grep -v '^OPENROUTER_API_KEY=' .env.runtime > "$tmp_env" || true
+          printf 'OPENROUTER_API_KEY=%s\n' "$(printf '%s' "$OPENROUTER_API_KEY_B64" | base64 -d)" >> "$tmp_env"
+          mv "$tmp_env" .env.runtime
+          chmod 600 .env.runtime
+
+          bun install --frozen-lockfile
+          bun run typecheck
+          bun test
+
+          pm2 restart ecosystem.config.cjs --update-env || pm2 start ecosystem.config.cjs
+          pm2 save
+          curl -fsS http://127.0.0.1:3001/health >/dev/null
+          REMOTE
