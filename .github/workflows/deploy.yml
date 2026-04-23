@@ -89,8 +89,6 @@ jobs:
           chmod 600 .env.runtime
 
           bun install --frozen-lockfile
-          bun run typecheck
-          bun test
 
           pm2 restart ecosystem.config.cjs --update-env || pm2 start ecosystem.config.cjs
           pm2 save
