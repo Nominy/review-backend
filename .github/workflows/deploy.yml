@@ -94,5 +94,15 @@ jobs:
 
           pm2 restart ecosystem.config.cjs --update-env || pm2 start ecosystem.config.cjs
           pm2 save
-          curl -fsS http://127.0.0.1:3001/health >/dev/null
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3001/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          pm2 status
+          tail -n 120 logs/pm2/review-backend.out.log || true
+          tail -n 120 logs/pm2/review-backend.error.log || true
+          exit 1
           REMOTE
