@@ -10,6 +10,11 @@ export type OpenRouterProviderSort = "price" | "throughput" | "latency";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_CREDITS_URL = "https://openrouter.ai/api/v1/credits";
+const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
+
+let cachedModelIds: Set<string> | null = null;
+let cachedModelIdsAt = 0;
+const MODEL_CACHE_TTL_MS = 5 * 60 * 1000;
 
 export type CreditsSnapshot = {
   total: number | null;
@@ -96,6 +101,55 @@ export async function requestOpenRouterChat(args: {
       | Record<string, unknown>
       | undefined)?.content
   );
+}
+
+export async function fetchOpenRouterModelIds(): Promise<Set<string>> {
+  const now = Date.now();
+  if (cachedModelIds && now - cachedModelIdsAt < MODEL_CACHE_TTL_MS) {
+    return cachedModelIds;
+  }
+
+  const response = await fetch(OPENROUTER_MODELS_URL, {
+    method: "GET",
+    headers: {
+      Accept: "application/json"
+    }
+  });
+
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`OpenRouter models HTTP ${response.status}: ${text.slice(0, 300)}`);
+  }
+
+  const json = parseMaybeJson(text);
+  const data = isObject(json) && Array.isArray(json.data) ? json.data : [];
+  const modelIds = new Set<string>();
+
+  for (const item of data) {
+    if (isObject(item) && typeof item.id === "string" && item.id.trim()) {
+      modelIds.add(item.id.trim());
+    }
+  }
+
+  if (!modelIds.size) {
+    throw new Error("OpenRouter returned no model ids.");
+  }
+
+  cachedModelIds = modelIds;
+  cachedModelIdsAt = now;
+  return modelIds;
+}
+
+export async function assertOpenRouterModelExists(model: string): Promise<void> {
+  const normalizedModel = model.trim();
+  if (!normalizedModel) {
+    throw new Error("model is required.");
+  }
+
+  const modelIds = await fetchOpenRouterModelIds();
+  if (!modelIds.has(normalizedModel)) {
+    throw new Error(`OpenRouter model does not exist: ${normalizedModel}`);
+  }
 }
 
 function fmtCredits(value: number | null): string {

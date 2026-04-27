@@ -1,5 +1,7 @@
 import type { Elysia } from "elysia";
+import { config } from "../../config";
 import { isObject } from "../../shared/http";
+import { assertOpenRouterModelExists } from "../../shared/openrouter-client";
 import { generateDraft } from "./service";
 import type { DraftingTranscriptRowInput, GenerateDraftRequest } from "./types";
 
@@ -46,14 +48,28 @@ function assertGenerateDraftBody(body: unknown): asserts body is GenerateDraftRe
   }
 }
 
+function resolveDraftingModel(body: GenerateDraftRequest): string {
+  return typeof body.model === "string" && body.model.trim() ? body.model.trim() : config.openRouterModel;
+}
+
+function getErrorStatus(message: string): number {
+  return message.includes("required") ||
+    message.includes("must") ||
+    message.includes("Body") ||
+    message.includes("does not exist")
+    ? 400
+    : 500;
+}
+
 export function registerDraftingRoutes(app: AnyElysia): AnyElysia {
   app.post("/api/draft/generate", async ({ body, set }) => {
     try {
       assertGenerateDraftBody(body);
-      return await generateDraft(body);
+      await assertOpenRouterModelExists(resolveDraftingModel(body));
+      return await generateDraft(body, { validateModel: async () => {} });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      set.status = message.includes("required") || message.includes("must") || message.includes("Body") ? 400 : 500;
+      set.status = getErrorStatus(message);
       return { error: message };
     }
   });
@@ -61,9 +77,10 @@ export function registerDraftingRoutes(app: AnyElysia): AnyElysia {
   app.post("/api/draft/generate/stream", async ({ body, set }) => {
     try {
       assertGenerateDraftBody(body);
+      await assertOpenRouterModelExists(resolveDraftingModel(body));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      set.status = message.includes("required") || message.includes("must") || message.includes("Body") ? 400 : 500;
+      set.status = getErrorStatus(message);
       return { error: message };
     }
 
@@ -78,6 +95,7 @@ export function registerDraftingRoutes(app: AnyElysia): AnyElysia {
 
         try {
           const response = await generateDraft(body, {
+            validateModel: async () => {},
             onRowComplete: async ({ row, completedRows, totalRows, summary }) => {
               controller.enqueue(
                 toSseChunk("row", {

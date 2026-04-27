@@ -1,4 +1,5 @@
 import { config } from "../../config";
+import { assertOpenRouterModelExists } from "../../shared/openrouter-client";
 import { rewriteRowWithModel } from "./openrouter";
 import { buildSystemPrompt } from "./prompt";
 import { getProjectPresetOrThrow } from "./project-presets";
@@ -14,6 +15,7 @@ import { validateRewrittenRow } from "./validators";
 type GenerateDraftDeps = {
   rewriteRow?: (context: RowRewriteContext) => Promise<string>;
   model?: string;
+  validateModel?: (model: string) => Promise<void>;
   testMode?: boolean;
   apiKey?: string;
   maxAttemptsPerRow?: number;
@@ -93,6 +95,10 @@ export async function generateDraft(
 
   if (!deps.rewriteRow && !testMode && !apiKey) {
     throw new Error("openRouterApiKey is required.");
+  }
+
+  if (!deps.rewriteRow && !testMode) {
+    await (deps.validateModel ?? assertOpenRouterModelExists)(model);
   }
 
   const rewriteRow =

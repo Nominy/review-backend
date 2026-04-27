@@ -9,6 +9,7 @@ function delay(ms: number): Promise<void> {
 const baseRequest: GenerateDraftRequest = {
   projectPreset: "ru-gold-2sp-v1",
   jobId: "job-1",
+  openRouterApiKey: "sk-or-test",
   rows: [
     {
       rowId: "r1",
@@ -157,5 +158,51 @@ describe("generateDraft", () => {
       status: "rewritten",
       warnings: ["length_delta"]
     });
+  });
+
+  test("validates the selected OpenRouter model before rewriting rows", async () => {
+    const seenModels: string[] = [];
+
+    await expect(
+      generateDraft(
+        {
+          ...baseRequest,
+          model: "missing/model"
+        },
+        {
+          validateModel: async (model) => {
+            seenModels.push(model);
+            throw new Error(`OpenRouter model does not exist: ${model}`);
+          },
+          rewriteRow: undefined
+        }
+      )
+    ).rejects.toThrow("OpenRouter model does not exist: missing/model");
+
+    expect(seenModels).toEqual(["missing/model"]);
+  });
+
+  test("validates the configured backend model when the request leaves model blank", async () => {
+    const seenModels: string[] = [];
+
+    await expect(
+      generateDraft(
+        {
+          ...baseRequest,
+          model: "   "
+        },
+        {
+          testMode: false,
+          apiKey: "sk-or-test",
+          model: "openai/default-model",
+          validateModel: async (model) => {
+            seenModels.push(model);
+            throw new Error(`checked ${model}`);
+          }
+        }
+      )
+    ).rejects.toThrow("checked openai/default-model");
+
+    expect(seenModels).toEqual(["openai/default-model"]);
   });
 });
