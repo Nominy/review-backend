@@ -84,10 +84,16 @@ export async function generateDraft(
   deps: GenerateDraftDeps = {}
 ): Promise<GenerateDraftResponse> {
   const preset = getProjectPresetOrThrow(request.projectPreset);
-  const model = deps.model || config.openRouterModel;
+  const requestedModel = typeof request.model === "string" ? request.model.trim() : "";
+  const model = deps.model || requestedModel || config.openRouterModel;
   const testMode = deps.testMode ?? config.openRouterTestMode;
   const systemPrompt = buildSystemPrompt(preset);
-  const apiKey = deps.apiKey ?? config.openRouterApiKey;
+  const requestedApiKey = typeof request.openRouterApiKey === "string" ? request.openRouterApiKey.trim() : "";
+  const apiKey = deps.apiKey ?? requestedApiKey;
+
+  if (!deps.rewriteRow && !testMode && !apiKey) {
+    throw new Error("openRouterApiKey is required.");
+  }
 
   const rewriteRow =
     deps.rewriteRow ||

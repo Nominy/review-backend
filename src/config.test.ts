@@ -76,7 +76,7 @@ describe("config", () => {
     expect(config.templatesLabEnabled).toBe(true);
   });
 
-  it("exposes the shared model settings drafting now relies on", async () => {
+  it("exposes the default model setting drafting can fall back to", async () => {
     process.env.OPENROUTER_TEST_MODE = "true";
     process.env.OPENROUTER_API_KEY = "";
     process.env.OPENROUTER_MODEL = "openai/drafting-model";

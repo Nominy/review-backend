@@ -13,6 +13,8 @@ export interface GenerateDraftRequest {
   projectPreset: DraftingProjectPresetId;
   jobId: string;
   rows: DraftingTranscriptRowInput[];
+  openRouterApiKey?: string;
+  model?: string;
 }
 
 export type DraftRowStatus = "rewritten" | "unchanged" | "failed";

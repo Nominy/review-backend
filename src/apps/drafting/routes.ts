@@ -36,6 +36,14 @@ function assertGenerateDraftBody(body: unknown): asserts body is GenerateDraftRe
   if (!Array.isArray(body.rows) || !body.rows.every(isRow)) {
     throw new Error("rows must be a valid transcript row array.");
   }
+
+  if (typeof body.openRouterApiKey !== "string" || !body.openRouterApiKey.trim()) {
+    throw new Error("openRouterApiKey is required.");
+  }
+
+  if ("model" in body && body.model !== undefined && body.model !== null && typeof body.model !== "string") {
+    throw new Error("model must be a string when provided.");
+  }
 }
 
 export function registerDraftingRoutes(app: AnyElysia): AnyElysia {

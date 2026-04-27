@@ -163,9 +163,10 @@
       <section class="section">
         <h2>AI processing</h2>
         <p>
-          The backend may use OpenRouter-backed language models to add punctuation and formatting to
-          transcript rows. This may include transcript text and related row metadata needed to
-          return a draft aligned with the original Babel segment structure.
+          The backend uses the OpenRouter API key provided by the user in the extension settings to
+          add punctuation and formatting to transcript rows. This may include transcript text and
+          related row metadata needed to return a draft aligned with the original Babel segment
+          structure.
         </p>
       </section>
 
@@ -173,7 +174,7 @@
         <h2>Local storage</h2>
         <p>
           The extension stores user settings in <strong>chrome.storage.local</strong>, including the
-          backend URL and the selected project preset.
+          backend URL, selected project preset, OpenRouter API key, and selected model.
         </p>
       </section>
 
