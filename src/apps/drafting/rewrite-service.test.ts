@@ -170,11 +170,12 @@ describe("generateDraft", () => {
           model: "missing/model"
         },
         {
+          testMode: false,
+          apiKey: "sk-or-test",
           validateModel: async (model) => {
             seenModels.push(model);
             throw new Error(`OpenRouter model does not exist: ${model}`);
-          },
-          rewriteRow: undefined
+          }
         }
       )
     ).rejects.toThrow("OpenRouter model does not exist: missing/model");
