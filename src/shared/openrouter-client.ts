@@ -41,8 +41,19 @@ async function requestOpenRouterChatCore(args: {
   temperature?: number;
   reasoningEffort?: OpenRouterReasoningEffort;
   providerSort?: OpenRouterProviderSort;
+  provider?: {
+    sort?: OpenRouterProviderSort;
+    allow_fallbacks?: boolean;
+    require_parameters?: boolean;
+  };
   title: string;
 }): Promise<string> {
+  const provider = args.provider ?? {
+    sort: args.providerSort ?? "latency",
+    allow_fallbacks: true,
+    require_parameters: true
+  };
+
   const response = await fetch(OPENROUTER_URL, {
     method: "POST",
     headers: {
@@ -58,11 +69,7 @@ async function requestOpenRouterChatCore(args: {
           effort: args.reasoningEffort,
           exclude: true
         } } : {}),
-      provider: {
-        sort: args.providerSort ?? "latency",
-        allow_fallbacks: true,
-        require_parameters: true
-      },
+      ...(provider ? { provider } : {}),
       messages: args.messages
     })
   });
@@ -121,29 +128,55 @@ export async function requestOpenRouterChat(args: {
   title: string;
 }): Promise<string> {
   if (!args.reasoningEffort) {
-    return requestOpenRouterChatCore(args);
+    return requestOpenRouterChatCore({
+      ...args,
+      provider: {
+        sort: args.providerSort ?? "latency",
+        allow_fallbacks: true,
+        require_parameters: true
+      }
+    });
   }
 
-  try {
-    return await requestOpenRouterChatCore(args);
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message.includes("OpenRouter HTTP 404:") &&
-      errorLooksProviderRoutingFailure(error.message)
-    ) {
-      return requestOpenRouterChatCore({
+  const fallbackPlan = [
+    { useReasoning: true, useProvider: true },
+    { useReasoning: false, useProvider: true },
+    { useReasoning: true, useProvider: false },
+    { useReasoning: false, useProvider: false }
+  ];
+  const provider = {
+    sort: args.providerSort ?? "latency",
+    allow_fallbacks: true,
+    require_parameters: true
+  };
+
+  for (let i = 0; i < fallbackPlan.length; i += 1) {
+    const plan = fallbackPlan[i];
+    try {
+      return await requestOpenRouterChatCore({
         apiKey: args.apiKey,
         model: args.model,
         messages: args.messages,
         temperature: args.temperature,
-        providerSort: args.providerSort,
+        reasoningEffort: plan.useReasoning ? args.reasoningEffort : undefined,
+        ...(plan.useProvider ? { provider } : {}),
         title: args.title
       });
-    }
+    } catch (error) {
+      if (
+        i < fallbackPlan.length - 1 &&
+        error instanceof Error &&
+        error.message.includes("OpenRouter HTTP 404:") &&
+        errorLooksProviderRoutingFailure(error.message)
+      ) {
+        continue;
+      }
 
-    throw error;
+      throw error;
+    }
   }
+
+  throw new Error("OpenRouter request failed after provider/reasoning fallbacks.");
 }
 
 export async function fetchOpenRouterModelIds(): Promise<Set<string>> {
