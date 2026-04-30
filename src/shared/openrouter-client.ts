@@ -45,14 +45,16 @@ async function requestOpenRouterChatCore(args: {
     sort?: OpenRouterProviderSort;
     allow_fallbacks?: boolean;
     require_parameters?: boolean;
-  };
+  } | null;
   title: string;
 }): Promise<string> {
-  const provider = args.provider ?? {
+  const provider = args.provider === null
+    ? null
+    : (args.provider ?? {
     sort: args.providerSort ?? "latency",
     allow_fallbacks: true,
     require_parameters: true
-  };
+    });
 
   const response = await fetch(OPENROUTER_URL, {
     method: "POST",
@@ -159,7 +161,7 @@ export async function requestOpenRouterChat(args: {
         messages: args.messages,
         temperature: args.temperature,
         reasoningEffort: plan.useReasoning ? args.reasoningEffort : undefined,
-        ...(plan.useProvider ? { provider } : {}),
+        provider: plan.useProvider ? provider : null,
         title: args.title
       });
     } catch (error) {
