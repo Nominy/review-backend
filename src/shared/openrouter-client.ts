@@ -24,6 +24,66 @@ export type CreditsSnapshot = {
   error?: string;
 };
 
+function errorLooksProviderRoutingFailure(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("no endpoints found that can handle the requested parameters")
+    || normalized.includes("provider routing")
+    || normalized.includes("unsupported parameter")
+    || normalized.includes("requires")
+  );
+}
+
+async function requestOpenRouterChatCore(args: {
+  apiKey: string;
+  model: string;
+  messages: OpenRouterMessage[];
+  temperature?: number;
+  reasoningEffort?: OpenRouterReasoningEffort;
+  providerSort?: OpenRouterProviderSort;
+  title: string;
+}): Promise<string> {
+  const response = await fetch(OPENROUTER_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${args.apiKey}`,
+      "Content-Type": "application/json",
+      "X-Title": args.title
+    },
+    body: JSON.stringify({
+      model: args.model,
+      temperature: args.temperature ?? 0.2,
+      stream: false,
+      ...(args.reasoningEffort ? { reasoning: {
+          effort: args.reasoningEffort,
+          exclude: true
+        } } : {}),
+      provider: {
+        sort: args.providerSort ?? "latency",
+        allow_fallbacks: true,
+        require_parameters: true
+      },
+      messages: args.messages
+    })
+  });
+
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`OpenRouter HTTP ${response.status}: ${text.slice(0, 300)}`);
+  }
+
+  const json = parseMaybeJson(text) as Record<string, unknown> | null;
+  if (!json) {
+    throw new Error("OpenRouter returned non-JSON payload.");
+  }
+
+  return normalizeContent(
+    ((json.choices as Array<Record<string, unknown>> | undefined)?.[0]?.message as
+      | Record<string, unknown>
+      | undefined)?.content
+  );
+}
+
 export function parseMaybeJson(text: string): unknown | null {
   if (typeof text !== "string") return null;
   const trimmed = text.trim();
@@ -60,47 +120,30 @@ export async function requestOpenRouterChat(args: {
   providerSort?: OpenRouterProviderSort;
   title: string;
 }): Promise<string> {
-  const response = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${args.apiKey}`,
-      "Content-Type": "application/json",
-      "X-Title": args.title
-    },
-    body: JSON.stringify({
-      model: args.model,
-      temperature: args.temperature ?? 0.2,
-      stream: false,
-      reasoning: args.reasoningEffort
-        ? {
-            effort: args.reasoningEffort,
-            exclude: true
-          }
-        : undefined,
-      provider: {
-        sort: args.providerSort ?? "latency",
-        allow_fallbacks: true,
-        require_parameters: true
-      },
-      messages: args.messages
-    })
-  });
-
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(`OpenRouter HTTP ${response.status}: ${text.slice(0, 300)}`);
+  if (!args.reasoningEffort) {
+    return requestOpenRouterChatCore(args);
   }
 
-  const json = parseMaybeJson(text) as Record<string, unknown> | null;
-  if (!json) {
-    throw new Error("OpenRouter returned non-JSON payload.");
-  }
+  try {
+    return await requestOpenRouterChatCore(args);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.includes("OpenRouter HTTP 404:") &&
+      errorLooksProviderRoutingFailure(error.message)
+    ) {
+      return requestOpenRouterChatCore({
+        apiKey: args.apiKey,
+        model: args.model,
+        messages: args.messages,
+        temperature: args.temperature,
+        providerSort: args.providerSort,
+        title: args.title
+      });
+    }
 
-  return normalizeContent(
-    ((json.choices as Array<Record<string, unknown>> | undefined)?.[0]?.message as
-      | Record<string, unknown>
-      | undefined)?.content
-  );
+    throw error;
+  }
 }
 
 export async function fetchOpenRouterModelIds(): Promise<Set<string>> {
