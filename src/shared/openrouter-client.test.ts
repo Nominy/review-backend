@@ -159,13 +159,28 @@ describe("requestOpenRouterChat", () => {
         reasoning?: { effort: string };
       };
 
-      if (callCount <= 2) {
+      if (callCount === 1) {
         expect(payload.model).toBe(model);
         expect(payload.provider).toBeDefined();
         expect(payload.reasoning).toBeTruthy();
-        if (callCount === 2) {
-          expect(payload.reasoning).toBeUndefined();
-        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              error: {
+                message:
+                  "No endpoints found that can handle the requested parameters. To learn more about provider routing, visit: https://openrouter.ai/docs/guides/routing/provider-selection",
+                code: 404
+              }
+            }),
+            { status: 404, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (callCount === 2) {
+        expect(payload.model).toBe(model);
+        expect(payload.provider).toBeDefined();
+        expect(payload.reasoning).toBeUndefined();
         return Promise.resolve(
           new Response(
             JSON.stringify({
@@ -181,8 +196,8 @@ describe("requestOpenRouterChat", () => {
       }
 
       expect(payload.model).toBe(model);
-      expect(payload.reasoning).toBeTruthy();
       expect(payload.provider).toBeUndefined();
+      expect(payload.reasoning).toBeTruthy();
       return Promise.resolve(
         new Response(
           JSON.stringify({
