@@ -1,4 +1,4 @@
-import { requestOpenRouterChat } from "../../shared/openrouter-client";
+import { requestOpenRouterChat, type OpenRouterContentPart } from "../../shared/openrouter-client";
 import type { RowRewriteContext, RewriteRowDeps } from "./types";
 import { buildUserPrompt } from "./prompt";
 
@@ -46,6 +46,32 @@ export function parseResponseText(content: string): string {
   }
 }
 
+function buildUserContent(context: RowRewriteContext): string | OpenRouterContentPart[] {
+  const userPrompt = buildUserPrompt(context);
+  if (!context.audioClips?.length) {
+    return userPrompt;
+  }
+
+  return [
+    { type: "text", text: userPrompt },
+    ...context.audioClips.flatMap((clip, index) => [
+      {
+        type: "text" as const,
+        text: `Audio clip ${index + 1}: trackId=${clip.trackId}${
+          clip.speakerKey ? `, speakerKey=${clip.speakerKey}` : ""
+        }${clip.trackLabel ? `, trackLabel=${clip.trackLabel}` : ""}.`
+      },
+      {
+        type: "input_audio" as const,
+        input_audio: {
+          data: clip.base64,
+          format: clip.format
+        }
+      }
+    ])
+  ];
+}
+
 function deterministicRewrite(text: string): string {
   let next = text.trim().replace(/\s{2,}/g, " ");
   next = next.replace(/\s+,/g, ",").replace(/,(?!\s|$)/g, ", ");
@@ -66,13 +92,12 @@ export async function rewriteRowWithModel(
     return deterministicRewrite(context.currentRow.text);
   }
 
-  const userPrompt = buildUserPrompt(context);
   const content = await requestOpenRouterChat({
     apiKey: deps.apiKey,
     model: deps.model,
     messages: [
       { role: "system", content: deps.systemPrompt },
-      { role: "user", content: userPrompt }
+      { role: "user", content: buildUserContent(context) }
     ],
     providerSort: "latency",
     reasoningEffort: "low",

@@ -86,4 +86,12 @@ describe("config", () => {
     expect(config.openRouterTestMode).toBe(true);
     expect(config.openRouterModel).toBe("openai/drafting-model");
   });
+
+  it("defaults drafting to the audio-capable Gemini model", async () => {
+    delete process.env.OPENROUTER_MODEL;
+
+    const { config } = await importFreshConfig();
+
+    expect(config.openRouterModel).toBe("google/gemini-3-flash-preview");
+  });
 });

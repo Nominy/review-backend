@@ -18,7 +18,7 @@ export const config = {
   port,
   openRouterTestMode,
   openRouterApiKey: openRouterTestMode ? optionalEnv("OPENROUTER_API_KEY", "") : requireEnv("OPENROUTER_API_KEY"),
-  openRouterModel: optionalEnv("OPENROUTER_MODEL", "openai/gpt-oss-120b"),
+  openRouterModel: optionalEnv("OPENROUTER_MODEL", "google/gemini-3-flash-preview"),
   analyticsLogPath: optionalEnv("ANALYTICS_LOG_PATH", "logs/pm2/review-backend.out.log"),
   reviewSessionsDir: optionalEnv("REVIEW_SESSIONS_DIR", "data/review-sessions"),
   pendingTemplateProposalPath: optionalEnv(

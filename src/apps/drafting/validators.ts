@@ -23,8 +23,120 @@ function extractTagTokens(text: string): string[] {
   return text.match(/\{[^{}]*\}|\[[^[\]]*\]|<[^<>]*>/g) ?? [];
 }
 
+function stripTagTokens(text: string): string {
+  return text.replace(/\{[^{}]*\}|\[[^[\]]*\]|<[^<>]*>/g, " ");
+}
+
 function tokenizeWords(text: string): string[] {
   return (text.toLocaleLowerCase().match(/[\p{L}\p{N}-]+/gu) ?? []).filter(Boolean);
+}
+
+function tokenizeTranscriptWords(text: string): string[] {
+  return tokenizeWords(stripTagTokens(text));
+}
+
+const NUMBER_WORDS = new Set([
+  "ноль",
+  "нуль",
+  "один",
+  "одна",
+  "одно",
+  "одни",
+  "два",
+  "две",
+  "три",
+  "четыре",
+  "пять",
+  "шесть",
+  "семь",
+  "восемь",
+  "девять",
+  "десять",
+  "одиннадцать",
+  "двенадцать",
+  "тринадцать",
+  "четырнадцать",
+  "пятнадцать",
+  "шестнадцать",
+  "семнадцать",
+  "восемнадцать",
+  "девятнадцать",
+  "двадцать",
+  "тридцать",
+  "сорок",
+  "пятьдесят",
+  "шестьдесят",
+  "семьдесят",
+  "восемьдесят",
+  "девяносто",
+  "сто",
+  "двести",
+  "триста",
+  "четыреста",
+  "пятьсот",
+  "шестьсот",
+  "семьсот",
+  "восемьсот",
+  "девятьсот",
+  "тысяча",
+  "тысячи",
+  "тысяч",
+  "миллион",
+  "миллиона",
+  "миллионов",
+  "первый",
+  "первого",
+  "первом",
+  "первым",
+  "второй",
+  "второго",
+  "втором",
+  "вторым",
+  "третий",
+  "третьего",
+  "третьем",
+  "третьим",
+  "четвертый",
+  "четвертого",
+  "пятый",
+  "пятого",
+  "десятый",
+  "десятого",
+  "минус",
+  "плюс",
+  "процент",
+  "процента",
+  "процентов"
+]);
+
+function normalizeComparableToken(token: string): string {
+  return token.toLocaleLowerCase().replace(/ё/gu, "е");
+}
+
+function isNumericToken(token: string): boolean {
+  return /^[+-]?\d+(?:[.,:/-]\d+)*(?:-?[а-яё]+)?%?$/iu.test(token);
+}
+
+function isNumberLikeToken(token: string): boolean {
+  const normalized = normalizeComparableToken(token);
+  return isNumericToken(normalized) || NUMBER_WORDS.has(normalized);
+}
+
+function tokensMatchExceptNumericNormalization(originalTokens: string[], rewrittenTokens: string[]): boolean {
+  const originalComparable = originalTokens.map(normalizeComparableToken);
+  const rewrittenComparable = rewrittenTokens.map(normalizeComparableToken);
+  if (JSON.stringify(originalComparable) === JSON.stringify(rewrittenComparable)) {
+    return true;
+  }
+
+  const originalWithoutNumbers = originalComparable.filter((token) => !isNumberLikeToken(token));
+  const rewrittenWithoutNumbers = rewrittenComparable.filter((token) => !isNumberLikeToken(token));
+  if (JSON.stringify(originalWithoutNumbers) !== JSON.stringify(rewrittenWithoutNumbers)) {
+    return false;
+  }
+
+  return originalComparable.length !== originalWithoutNumbers.length ||
+    rewrittenComparable.length !== rewrittenWithoutNumbers.length;
 }
 
 function levenshteinDistance(left: string, right: string): number {
@@ -106,6 +218,15 @@ export function validateRewrittenRow(originalText: string, rewrittenText: string
   let status: DraftRowStatus = "rewritten";
   if (trimmed === original) {
     status = "unchanged";
+  }
+
+  const originalTranscriptTokens = tokenizeTranscriptWords(original);
+  const rewrittenTranscriptTokens = tokenizeTranscriptWords(trimmed);
+  if (
+    status === "rewritten" &&
+    !tokensMatchExceptNumericNormalization(originalTranscriptTokens, rewrittenTranscriptTokens)
+  ) {
+    warnings.push("word_drift");
   }
 
   if (

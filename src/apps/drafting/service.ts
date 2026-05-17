@@ -1,9 +1,17 @@
 import { config } from "../../config";
-import { assertOpenRouterModelExists } from "../../shared/openrouter-client";
+import { assertOpenRouterModelExists, assertOpenRouterModelSupportsAudio } from "../../shared/openrouter-client";
+import {
+  loadAudioCueTagSystem,
+  selectAudioTracksForRow,
+  sliceAudioTrackForRow,
+  type SliceAudioArgs
+} from "./audio-cues";
 import { rewriteRowWithModel } from "./openrouter";
 import { buildSystemPrompt } from "./prompt";
 import { getProjectPresetOrThrow } from "./project-presets";
 import type {
+  AudioCueAudioTrackInput,
+  AudioCueClipInput,
   DraftRowResult,
   DraftSummary,
   GenerateDraftRequest,
@@ -14,6 +22,10 @@ import { validateRewrittenRow } from "./validators";
 
 type GenerateDraftDeps = {
   rewriteRow?: (context: RowRewriteContext) => Promise<string>;
+  audioTracks?: AudioCueAudioTrackInput[];
+  sliceAudio?: (args: SliceAudioArgs) => Promise<AudioCueClipInput>;
+  validateAudioModel?: (model: string) => Promise<void>;
+  loadTagSystem?: () => Promise<string>;
   model?: string;
   validateModel?: (model: string) => Promise<void>;
   testMode?: boolean;
@@ -81,6 +93,11 @@ async function rewriteRowWithRetry(
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
+function audioWarning(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return `audio_input_error:${message}`;
+}
+
 export async function generateDraft(
   request: GenerateDraftRequest,
   deps: GenerateDraftDeps = {}
@@ -97,9 +114,19 @@ export async function generateDraft(
     throw new Error("openRouterApiKey is required.");
   }
 
-  if (!deps.rewriteRow && !testMode) {
-    await (deps.validateModel ?? assertOpenRouterModelExists)(model);
+  const audioTracks = deps.audioTracks ?? [];
+  const shouldUseAudio = audioTracks.length > 0;
+
+  if (!testMode) {
+    if (shouldUseAudio) {
+      await (deps.validateAudioModel ?? assertOpenRouterModelSupportsAudio)(model);
+    } else if (!deps.rewriteRow) {
+      await (deps.validateModel ?? assertOpenRouterModelExists)(model);
+    }
   }
+
+  const tagSystem = shouldUseAudio ? await (deps.loadTagSystem ?? loadAudioCueTagSystem)() : undefined;
+  const sliceAudio = deps.sliceAudio ?? sliceAudioTrackForRow;
 
   const rewriteRow =
     deps.rewriteRow ||
@@ -117,8 +144,40 @@ export async function generateDraft(
   let completedRowCount = 0;
 
   await Promise.all(request.rows.map(async (currentRow, index) => {
+    const audioWarnings: string[] = [];
+    let audioClips: AudioCueClipInput[] | undefined;
+
+    if (shouldUseAudio) {
+      try {
+        if (currentRow.startSeconds === null || currentRow.endSeconds === null) {
+          throw new Error("missing_row_timing");
+        }
+        const selectedTracks = selectAudioTracksForRow(audioTracks, currentRow);
+        if (!selectedTracks.length) {
+          throw new Error(`missing_speaker_audio:${currentRow.speakerKey}`);
+        }
+        audioClips = await Promise.all(
+          selectedTracks.map(async (track) => {
+            const clip = await sliceAudio({
+              track,
+              row: currentRow
+            });
+            return {
+              ...clip,
+              trackId: track.trackId,
+              speakerKey: track.speakerKey,
+              trackLabel: track.trackLabel
+            };
+          })
+        );
+      } catch (error) {
+        audioWarnings.push(audioWarning(error));
+      }
+    }
+
     const context: RowRewriteContext = {
-      currentRow
+      currentRow,
+      ...(audioClips?.length ? { audioClips, tagSystem } : {})
     };
     const originalRow = context.currentRow;
 
@@ -130,7 +189,7 @@ export async function generateDraft(
         rowId: originalRow.rowId,
         rewrittenText: originalRow.text,
         status: "failed",
-        warnings: ["rewrite_error", error instanceof Error ? error.message : String(error)]
+        warnings: ["rewrite_error", error instanceof Error ? error.message : String(error), ...audioWarnings]
       };
       draftRows[index] = rowResult;
       completedRowCount += 1;
@@ -150,7 +209,7 @@ export async function generateDraft(
       rowId: originalRow.rowId,
       rewrittenText: validation.acceptedText,
       status: validation.status,
-      warnings: validation.warnings
+      warnings: [...validation.warnings, ...audioWarnings]
     };
     draftRows[index] = rowResult;
     completedRowCount += 1;

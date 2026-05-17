@@ -17,6 +17,32 @@ export interface GenerateDraftRequest {
   model?: string;
 }
 
+export interface AudioCueAudioTrackInput {
+  trackId: string;
+  speakerKey?: string;
+  trackLabel?: string;
+  fileName: string;
+  mimeType: string;
+  bytes: Uint8Array;
+}
+
+export interface AudioCueDraftRequest extends GenerateDraftRequest {
+  audioTracks: AudioCueAudioTrackInput[];
+}
+
+export interface AudioCueClipInput {
+  trackId: string;
+  speakerKey?: string;
+  trackLabel?: string;
+  format: string;
+  base64: string;
+}
+
+export interface AudioCueRewriteContext extends RowRewriteContext {
+  audioClips: AudioCueClipInput[];
+  tagSystem: string;
+}
+
 export type DraftRowStatus = "rewritten" | "unchanged" | "failed";
 
 export interface DraftRowResult {
@@ -73,6 +99,8 @@ export interface LoadedProjectPreset {
 
 export interface RowRewriteContext {
   currentRow: DraftingTranscriptRowInput;
+  audioClips?: AudioCueClipInput[];
+  tagSystem?: string;
 }
 
 export interface RowValidationResult {

@@ -62,6 +62,42 @@ describe("createApp", () => {
     expect(payload.error).toContain("projectPreset");
   });
 
+  it("parses optional audio cue multipart payload on the default drafting stream route", async () => {
+    const form = new FormData();
+    form.set(
+      "payload",
+      JSON.stringify({
+        projectPreset: "ru-gold-2sp-v1",
+        jobId: "job-1",
+        rows: "bad",
+        openRouterApiKey: "sk-or-test"
+      })
+    );
+    form.set("audioTrack:audio-1", new File([new Uint8Array([1, 2, 3])], "audio.wav", { type: "audio/wav" }));
+
+    const response = await createApp().handle(
+      new Request("http://localhost/api/draft/generate/stream", {
+        method: "POST",
+        body: form
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toContain("rows must be a valid transcript row array");
+  });
+
+  it("does not expose audio cues as a separate drafting endpoint", async () => {
+    const response = await createApp().handle(
+      new Request("http://localhost/api/draft/audio-cues/stream", {
+        method: "POST",
+        body: new FormData()
+      })
+    );
+
+    expect(response.status).toBe(404);
+  });
+
   it("serves the dedicated gold drafting privacy page", async () => {
     const response = await createApp().handle(new Request("http://localhost/gold-drafting-privacy"));
     const html = await response.text();

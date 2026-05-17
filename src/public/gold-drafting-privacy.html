@@ -130,10 +130,11 @@
         <h1>Babel Gold Drafting</h1>
         <p class="lede">
           Babel Gold Drafting is a browser extension used to turn existing Babel transcript rows
-          into a Silver-to-Gold draft. This page explains what transcript data is processed, how it
-          is used, and what the Chrome Web Store release sends to the production backend.
+          into a Silver-to-Gold draft. Audio input for audible-cue tags is an opt-in research
+          preview. This page explains what transcript and optional audio data is processed, how it is
+          used, and what the Chrome Web Store release sends to the production backend.
         </p>
-        <div class="meta">Last updated: 2026-04-11</div>
+        <div class="meta">Last updated: 2026-05-16</div>
       </section>
 
       <section class="section">
@@ -142,7 +143,10 @@
           The extension processes transcript content visible on
           <strong>https://dashboard.babel.audio/*</strong>, including the current row text, row
           order, speaker labels, and timing values needed to map the generated draft back onto the
-          existing Babel rows.
+          existing Babel rows. By default, it does not collect or send task audio. When the user
+          enables the audio input research preview, it may also process task audio sources visible on
+          the same Babel page so the backend can cut short row-level clips by the original segment
+          timing.
         </p>
       </section>
 
@@ -151,6 +155,7 @@
         <p>The extension sends the minimum transcript payload required to the configured backend so it can:</p>
         <ul>
           <li>generate a Silver-to-Gold draft for the current Babel job</li>
+          <li>optionally add allowed audible-event, vocal-style, emotion, and background-sound tags</li>
           <li>stream row-by-row drafting progress back to the extension</li>
           <li>return the final draft so the user can review the diff before applying changes</li>
         </ul>
@@ -164,9 +169,10 @@
         <h2>AI processing</h2>
         <p>
           The backend uses the OpenRouter API key provided by the user in the extension settings to
-          add punctuation and formatting to transcript rows. This may include transcript text and
-          related row metadata needed to return a draft aligned with the original Babel segment
-          structure.
+          add punctuation, formatting, and optional audio-cue tags to transcript rows. Default
+          requests include transcript text and related row metadata only. If the user enables the
+          audio input research preview, requests may also include short audio clips cut from the
+          current Babel task audio when the selected OpenRouter model supports audio input.
         </p>
       </section>
 
@@ -174,7 +180,8 @@
         <h2>Local storage</h2>
         <p>
           The extension stores user settings in <strong>chrome.storage.local</strong>, including the
-          backend URL, selected project preset, OpenRouter API key, and selected model.
+          backend URL, selected project preset, OpenRouter API key, selected model, and whether the
+          audio input research preview is enabled.
         </p>
       </section>
 
@@ -183,7 +190,9 @@
         <p>
           The backend may temporarily process transcript requests to generate a response, but the
           extension itself does not collect browsing history, search history, passwords, location
-          data, or click-tracking analytics.
+          data, or click-tracking analytics. When the audio input research preview is enabled, task
+          audio is used for the requested drafting response and is not a separate audio-overlap or
+          reuse database workflow.
         </p>
       </section>
 

@@ -1,8 +1,23 @@
 import { isObject, toFiniteNumber } from "./http";
 
+export type OpenRouterTextContentPart = {
+  type: "text";
+  text: string;
+};
+
+export type OpenRouterAudioContentPart = {
+  type: "input_audio";
+  input_audio: {
+    data: string;
+    format: string;
+  };
+};
+
+export type OpenRouterContentPart = OpenRouterTextContentPart | OpenRouterAudioContentPart;
+
 export type OpenRouterMessage = {
   role: string;
-  content: string;
+  content: string | OpenRouterContentPart[];
 };
 
 export type OpenRouterReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -14,6 +29,8 @@ const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 
 let cachedModelIds: Set<string> | null = null;
 let cachedModelIdsAt = 0;
+let cachedModelCapabilities: Map<string, Set<string>> | null = null;
+let cachedModelCapabilitiesAt = 0;
 const MODEL_CACHE_TTL_MS = 5 * 60 * 1000;
 
 export type CreditsSnapshot = {
@@ -182,9 +199,59 @@ export async function requestOpenRouterChat(args: {
 }
 
 export async function fetchOpenRouterModelIds(): Promise<Set<string>> {
+  return (await fetchOpenRouterModelCatalog()).modelIds;
+}
+
+export async function assertOpenRouterModelExists(model: string): Promise<void> {
+  const normalizedModel = model.trim();
+  if (!normalizedModel) {
+    throw new Error("model is required.");
+  }
+
+  const catalog = await fetchOpenRouterModelCatalog();
+  if (!catalog.modelIds.has(normalizedModel)) {
+    throw new Error(`OpenRouter model does not exist: ${normalizedModel}`);
+  }
+}
+
+export async function assertOpenRouterModelSupportsAudio(model: string): Promise<void> {
+  const normalizedModel = model.trim();
+  if (!normalizedModel) {
+    throw new Error("model is required.");
+  }
+
+  let catalog = await fetchOpenRouterModelCatalog();
+  if (!catalog.modelIds.has(normalizedModel)) {
+    // Tests and long-running processes may carry a stale cache while users type a new model id.
+    catalog = await fetchOpenRouterModelCatalog({ forceRefresh: true });
+  }
+
+  if (!catalog.modelIds.has(normalizedModel)) {
+    throw new Error(`OpenRouter model does not exist: ${normalizedModel}`);
+  }
+
+  const inputModalities = catalog.inputModalitiesByModel.get(normalizedModel) || new Set<string>();
+  if (!inputModalities.has("audio")) {
+    throw new Error(`OpenRouter model does not support audio input: ${normalizedModel}`);
+  }
+}
+
+async function fetchOpenRouterModelCatalog(options: { forceRefresh?: boolean } = {}): Promise<{
+  modelIds: Set<string>;
+  inputModalitiesByModel: Map<string, Set<string>>;
+}> {
   const now = Date.now();
-  if (cachedModelIds && now - cachedModelIdsAt < MODEL_CACHE_TTL_MS) {
-    return cachedModelIds;
+  if (
+    !options.forceRefresh &&
+    cachedModelIds &&
+    cachedModelCapabilities &&
+    now - cachedModelIdsAt < MODEL_CACHE_TTL_MS &&
+    now - cachedModelCapabilitiesAt < MODEL_CACHE_TTL_MS
+  ) {
+    return {
+      modelIds: cachedModelIds,
+      inputModalitiesByModel: cachedModelCapabilities
+    };
   }
 
   const response = await fetch(OPENROUTER_MODELS_URL, {
@@ -202,11 +269,29 @@ export async function fetchOpenRouterModelIds(): Promise<Set<string>> {
   const json = parseMaybeJson(text);
   const data = isObject(json) && Array.isArray(json.data) ? json.data : [];
   const modelIds = new Set<string>();
+  const inputModalitiesByModel = new Map<string, Set<string>>();
 
   for (const item of data) {
-    if (isObject(item) && typeof item.id === "string" && item.id.trim()) {
-      modelIds.add(item.id.trim());
+    if (!isObject(item) || typeof item.id !== "string" || !item.id.trim()) {
+      continue;
     }
+    const id = item.id.trim();
+    modelIds.add(id);
+    const architecture = isObject(item.architecture) ? item.architecture : {};
+    const rawInputModalities = Array.isArray(architecture.input_modalities)
+      ? architecture.input_modalities
+      : Array.isArray(item.input_modalities)
+        ? item.input_modalities
+        : [];
+    inputModalitiesByModel.set(
+      id,
+      new Set(
+        rawInputModalities
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => value.trim().toLowerCase())
+          .filter(Boolean)
+      )
+    );
   }
 
   if (!modelIds.size) {
@@ -215,19 +300,12 @@ export async function fetchOpenRouterModelIds(): Promise<Set<string>> {
 
   cachedModelIds = modelIds;
   cachedModelIdsAt = now;
-  return modelIds;
-}
-
-export async function assertOpenRouterModelExists(model: string): Promise<void> {
-  const normalizedModel = model.trim();
-  if (!normalizedModel) {
-    throw new Error("model is required.");
-  }
-
-  const modelIds = await fetchOpenRouterModelIds();
-  if (!modelIds.has(normalizedModel)) {
-    throw new Error(`OpenRouter model does not exist: ${normalizedModel}`);
-  }
+  cachedModelCapabilities = inputModalitiesByModel;
+  cachedModelCapabilitiesAt = now;
+  return {
+    modelIds,
+    inputModalitiesByModel
+  };
 }
 
 function fmtCredits(value: number | null): string {

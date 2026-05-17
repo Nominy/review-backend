@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { generateDraft } from "./service";
-import type { GenerateDraftRequest, RowRewriteContext } from "./types";
+import type { AudioCueAudioTrackInput, GenerateDraftRequest, RowRewriteContext } from "./types";
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -205,5 +205,70 @@ describe("generateDraft", () => {
     ).rejects.toThrow("checked openai/default-model");
 
     expect(seenModels).toEqual(["openai/default-model"]);
+  });
+
+  test("passes matching speaker-lane audio clips into the normal row rewrite context", async () => {
+    const audioTracks: AudioCueAudioTrackInput[] = [
+      {
+        trackId: "lane-1",
+        speakerKey: "lane-a",
+        trackLabel: "Speaker 1",
+        fileName: "lane-1.wav",
+        mimeType: "audio/wav",
+        bytes: new Uint8Array([1, 2, 3])
+      },
+      {
+        trackId: "lane-2",
+        speakerKey: "lane-b",
+        trackLabel: "Speaker 2",
+        fileName: "lane-2.wav",
+        mimeType: "audio/wav",
+        bytes: new Uint8Array([4, 5, 6])
+      }
+    ];
+    const seenContexts: RowRewriteContext[] = [];
+    const seenSlices: string[] = [];
+    const seenAudioModels: string[] = [];
+
+    await generateDraft(
+      {
+        ...baseRequest,
+        rows: [
+          { ...baseRequest.rows[0]!, speakerKey: "Speaker 1" },
+          { ...baseRequest.rows[1]!, speakerKey: "Speaker 2" }
+        ],
+        model: "google/gemini-3-flash-preview"
+      },
+      {
+        audioTracks,
+        validateAudioModel: async (model) => {
+          seenAudioModels.push(model);
+        },
+        sliceAudio: async ({ track, row }) => {
+          seenSlices.push(`${row.rowId}:${track.trackId}`);
+          return {
+            trackId: track.trackId,
+            speakerKey: track.speakerKey,
+            trackLabel: track.trackLabel,
+            format: "wav",
+            base64: Buffer.from(`${row.rowId}:${track.trackId}`).toString("base64")
+          };
+        },
+        rewriteRow: async (context: RowRewriteContext) => {
+          seenContexts.push(context);
+          return `${context.currentRow.text}.`;
+        }
+      }
+    );
+
+    expect(seenAudioModels).toEqual(["google/gemini-3-flash-preview"]);
+    expect(seenSlices).toEqual(["r1:lane-1", "r2:lane-2"]);
+    expect(seenContexts.map((context) => context.audioClips?.map((clip) => clip.trackId))).toEqual([
+      ["lane-1"],
+      ["lane-2"]
+    ]);
+    expect(seenContexts.every((context) => typeof context.tagSystem === "string" && context.tagSystem.length > 0)).toBe(
+      true
+    );
   });
 });

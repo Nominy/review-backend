@@ -3,10 +3,10 @@ import { validateRewrittenRow } from "./validators";
 
 describe("validateRewrittenRow", () => {
   test("fails empty output and falls back to the original row", () => {
-    const result = validateRewrittenRow("привет", "");
+    const result = validateRewrittenRow("hello", "");
 
     expect(result).toEqual({
-      acceptedText: "привет",
+      acceptedText: "hello",
       status: "failed",
       warnings: ["empty_output"],
       usedFallback: true
@@ -14,50 +14,70 @@ describe("validateRewrittenRow", () => {
   });
 
   test("keeps tag drift as a warning instead of failing the row", () => {
-    const result = validateRewrittenRow("{music} привет", "привет");
+    const result = validateRewrittenRow("{music} hello", "hello");
 
     expect(result.status).toBe("rewritten");
     expect(result.usedFallback).toBe(false);
-    expect(result.acceptedText).toBe("привет");
+    expect(result.acceptedText).toBe("hello");
     expect(result.warnings).toContain("tag_drift");
   });
 
   test("allows SKAZ normalization braces without failing the row", () => {
-    const result = validateRewrittenRow("у меня 123 яблока", "У меня 123 {СКАЗ: сто двадцать три} яблока.");
+    const result = validateRewrittenRow(
+      "i have 123 apples",
+      "I have 123 {SKAZ: one two three} apples."
+    );
 
     expect(result.status).toBe("rewritten");
     expect(result.usedFallback).toBe(false);
-    expect(result.acceptedText).toBe("У меня 123 {СКАЗ: сто двадцать три} яблока.");
+    expect(result.acceptedText).toBe("I have 123 {SKAZ: one two three} apples.");
     expect(result.warnings).toContain("tag_drift");
   });
 
-  test("keeps large rewrites as warnings instead of failing the row", () => {
-    const result = validateRewrittenRow("это довольно длинная исходная строка для проверки", "совсем другой текст без совпадений");
+  test("warns when the model substitutes transcript words", () => {
+    const result = validateRewrittenRow("m.", "uh-huh.");
 
     expect(result.status).toBe("rewritten");
     expect(result.usedFallback).toBe(false);
-    expect(result.acceptedText).toBe("совсем другой текст без совпадений");
-    expect(result.warnings).toContain("edit_distance_drift");
-    expect(result.warnings).toContain("large_edit_distance");
+    expect(result.acceptedText).toBe("uh-huh.");
+    expect(result.warnings).toContain("word_drift");
   });
 
-  test("does not fail on numeral changes", () => {
-    const result = validateRewrittenRow("у меня 2 кота", "У меня два кота.");
+  test("warns on large non-numeric rewrites", () => {
+    const result = validateRewrittenRow("this is a fairly long source row for validation", "completely different text");
 
     expect(result.status).toBe("rewritten");
     expect(result.usedFallback).toBe(false);
-    expect(result.acceptedText).toBe("У меня два кота.");
+    expect(result.acceptedText).toBe("completely different text");
+    expect(result.warnings).toContain("word_drift");
+  });
+
+  test("allows numeral changes", () => {
+    const result = validateRewrittenRow("i have 2 cats", "I have 3 cats.");
+
+    expect(result.status).toBe("rewritten");
+    expect(result.usedFallback).toBe(false);
+    expect(result.acceptedText).toBe("I have 3 cats.");
     expect(result.warnings).toContain("length_delta");
   });
 
   test("allows small punctuation-only cleanup", () => {
-    const result = validateRewrittenRow("ну да наверное", "Ну да, наверное.");
+    const result = validateRewrittenRow("well yes probably", "Well yes, probably.");
 
     expect(result).toEqual({
-      acceptedText: "Ну да, наверное.",
+      acceptedText: "Well yes, probably.",
       status: "rewritten",
       warnings: ["length_delta"],
       usedFallback: false
     });
+  });
+
+  test("allows adding audio tags without changing transcript words", () => {
+    const result = validateRewrittenRow("Hello.", "[laugh] Hello.");
+
+    expect(result.status).toBe("rewritten");
+    expect(result.usedFallback).toBe(false);
+    expect(result.acceptedText).toBe("[laugh] Hello.");
+    expect(result.warnings).toContain("tag_drift");
   });
 });
