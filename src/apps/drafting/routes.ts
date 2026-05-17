@@ -2,6 +2,7 @@ import type { Elysia } from "elysia";
 import { config } from "../../config";
 import { isObject } from "../../shared/http";
 import { assertOpenRouterModelExists, assertOpenRouterModelSupportsAudio } from "../../shared/openrouter-client";
+import { getOrStartDraftSession } from "./session-store";
 import { generateDraft } from "./service";
 import type {
   AudioCueAudioTrackInput,
@@ -14,6 +15,23 @@ const encoder = new TextEncoder();
 
 function toSseChunk(event: string, data: unknown): Uint8Array {
   return encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+}
+
+function safeEnqueue(controller: ReadableStreamDefaultController<Uint8Array>, chunk: Uint8Array): boolean {
+  try {
+    controller.enqueue(chunk);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function safeClose(controller: ReadableStreamDefaultController<Uint8Array>): void {
+  try {
+    controller.close();
+  } catch {
+    // The client may have already cancelled the stream; the draft session should still finish.
+  }
 }
 
 function isRow(value: unknown): value is DraftingTranscriptRowInput {
@@ -49,6 +67,15 @@ function assertGenerateDraftBody(body: unknown): asserts body is GenerateDraftRe
 
   if ("model" in body && body.model !== undefined && body.model !== null && typeof body.model !== "string") {
     throw new Error("model must be a string when provided.");
+  }
+
+  if (
+    "draftSessionId" in body &&
+    body.draftSessionId !== undefined &&
+    body.draftSessionId !== null &&
+    typeof body.draftSessionId !== "string"
+  ) {
+    throw new Error("draftSessionId must be a string when provided.");
   }
 }
 
@@ -178,11 +205,13 @@ export function registerDraftingRoutes(app: AnyElysia): AnyElysia {
     try {
       const { request, audioTracks } = await bodyToGenerateDraftRequest(body);
       await validateRequestedModel(request, audioTracks);
-      return await generateDraft(request, {
-        validateModel: async () => {},
-        validateAudioModel: async () => {},
-        audioTracks
-      });
+      return await getOrStartDraftSession(request, () =>
+        generateDraft(request, {
+          validateModel: async () => {},
+          validateAudioModel: async () => {},
+          audioTracks
+        })
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       set.status = getErrorStatus(message);
@@ -207,33 +236,39 @@ export function registerDraftingRoutes(app: AnyElysia): AnyElysia {
       return { error: message };
     }
 
+    let streamOpen = true;
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
-        controller.enqueue(
-          toSseChunk("started", {
-            jobId: request.jobId,
-            totalRows: request.rows.length
-          })
-        );
+        const send = (event: string, data: unknown): void => {
+          if (!streamOpen) {
+            return;
+          }
+          streamOpen = safeEnqueue(controller, toSseChunk(event, data));
+        };
+
+        send("started", {
+          jobId: request.jobId,
+          totalRows: request.rows.length
+        });
 
         try {
-          const response = await generateDraft(request, {
-            validateModel: async () => {},
-            validateAudioModel: async () => {},
-            audioTracks,
-            onRowComplete: async ({ row, completedRows, totalRows, summary }) => {
-              controller.enqueue(
-                toSseChunk("row", {
+          const response = await getOrStartDraftSession(request, () =>
+            generateDraft(request, {
+              validateModel: async () => {},
+              validateAudioModel: async () => {},
+              audioTracks,
+              onRowComplete: async ({ row, completedRows, totalRows, summary }) => {
+                send("row", {
                   row,
                   completedRows,
                   totalRows,
                   summary
-                })
-              );
-            }
-          });
+                });
+              }
+            })
+          );
 
-          controller.enqueue(toSseChunk("done", response));
+          send("done", response);
           if (process.env.DEBUG_AUDIO_CUES === "1") {
             console.log(
               "[draft] done",
@@ -254,14 +289,16 @@ export function registerDraftingRoutes(app: AnyElysia): AnyElysia {
               })
             );
           }
-          controller.enqueue(
-            toSseChunk("error", {
-              error: error instanceof Error ? error.message : String(error)
-            })
-          );
+          send("error", {
+            error: error instanceof Error ? error.message : String(error)
+          });
         } finally {
-          controller.close();
+          streamOpen = false;
+          safeClose(controller);
         }
+      },
+      cancel() {
+        streamOpen = false;
       }
     });
 

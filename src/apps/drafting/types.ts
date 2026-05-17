@@ -12,6 +12,7 @@ export interface DraftingTranscriptRowInput {
 export interface GenerateDraftRequest {
   projectPreset: DraftingProjectPresetId;
   jobId: string;
+  draftSessionId?: string;
   rows: DraftingTranscriptRowInput[];
   openRouterApiKey?: string;
   model?: string;
