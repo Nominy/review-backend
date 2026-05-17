@@ -134,6 +134,39 @@ describe("generateDraft", () => {
     expect(response.draftRows.map((row) => row.rewrittenText)).toEqual(["Privet.", "Da."]);
   });
 
+  test("limits concurrent row work for larger audio drafts", async () => {
+    let activeRows = 0;
+    let maxActiveRows = 0;
+    const rows = Array.from({ length: 5 }, (_, index) => ({
+      rowId: `r${index + 1}`,
+      speakerKey: "spk-1",
+      startSeconds: index,
+      endSeconds: index + 1,
+      text: `row ${index + 1}`,
+      index
+    }));
+
+    const response = await generateDraft(
+      {
+        ...baseRequest,
+        rows
+      },
+      {
+        rowConcurrency: 2,
+        rewriteRow: async (context: RowRewriteContext) => {
+          activeRows += 1;
+          maxActiveRows = Math.max(maxActiveRows, activeRows);
+          await delay(10);
+          activeRows -= 1;
+          return `${context.currentRow.text}.`;
+        }
+      }
+    );
+
+    expect(maxActiveRows).toBeLessThanOrEqual(2);
+    expect(response.draftRows.map((row) => row.rowId)).toEqual(["r1", "r2", "r3", "r4", "r5"]);
+  });
+
   test("retries a failed row call once before succeeding", async () => {
     const attempts = new Map<string, number>();
 

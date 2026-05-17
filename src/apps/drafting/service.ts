@@ -31,6 +31,7 @@ type GenerateDraftDeps = {
   testMode?: boolean;
   apiKey?: string;
   maxAttemptsPerRow?: number;
+  rowConcurrency?: number;
   onRowComplete?: (args: {
     row: DraftRowResult;
     completedRows: number;
@@ -38,6 +39,8 @@ type GenerateDraftDeps = {
     summary: DraftSummary;
   }) => void | Promise<void>;
 };
+
+const DEFAULT_ROW_CONCURRENCY = 3;
 
 function summarizeDraftRows(draftRows: DraftRowResult[]): DraftSummary {
   const anomalyCounts: Record<string, number> = {};
@@ -98,6 +101,32 @@ function audioWarning(error: unknown): string {
   return `audio_input_error:${message}`;
 }
 
+function normalizeConcurrency(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) {
+    return DEFAULT_ROW_CONCURRENCY;
+  }
+  return Math.max(1, Math.floor(value));
+}
+
+async function runWithConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<void>
+): Promise<void> {
+  let nextIndex = 0;
+  const workerCount = Math.min(items.length, concurrency);
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        await worker(items[index]!, index);
+      }
+    })
+  );
+}
+
 export async function generateDraft(
   request: GenerateDraftRequest,
   deps: GenerateDraftDeps = {}
@@ -139,11 +168,13 @@ export async function generateDraft(
         testMode
       }));
   const maxAttemptsPerRow = Math.max(1, deps.maxAttemptsPerRow ?? 2);
+  const envRowConcurrency = process.env.DRAFT_ROW_CONCURRENCY ? Number(process.env.DRAFT_ROW_CONCURRENCY) : undefined;
+  const rowConcurrency = normalizeConcurrency(deps.rowConcurrency ?? envRowConcurrency);
 
   const draftRows: Array<DraftRowResult | undefined> = new Array(request.rows.length);
   let completedRowCount = 0;
 
-  await Promise.all(request.rows.map(async (currentRow, index) => {
+  await runWithConcurrency(request.rows, rowConcurrency, async (currentRow, index) => {
     const audioWarnings: string[] = [];
     let audioClips: AudioCueClipInput[] | undefined;
 
@@ -221,7 +252,7 @@ export async function generateDraft(
         summary: summarizeCompletedDraftRows(draftRows)
       });
     }
-  }));
+  });
 
   const completedDraftRows = draftRows.filter((row): row is DraftRowResult => Boolean(row));
 
