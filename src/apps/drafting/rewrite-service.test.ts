@@ -372,4 +372,66 @@ describe("generateDraft", () => {
       ["lane-2"]
     ]);
   });
+
+  test("deduplicates duplicate captured lanes before batch slicing", async () => {
+    const audioTracks: AudioCueAudioTrackInput[] = [
+      {
+        trackId: "lane-1",
+        speakerKey: "lane-a",
+        trackLabel: "Speaker 1",
+        fileName: "lane-1.wav",
+        mimeType: "audio/wav",
+        bytes: new Uint8Array([1, 2, 3])
+      },
+      {
+        trackId: "lane-1",
+        speakerKey: "lane-a",
+        trackLabel: "Speaker 1",
+        fileName: "lane-1-duplicate.wav",
+        mimeType: "audio/wav",
+        bytes: new Uint8Array([1, 2, 3])
+      }
+    ];
+    const batchCalls: string[][] = [];
+    const seenContexts: RowRewriteContext[] = [];
+
+    await generateDraft(
+      {
+        ...baseRequest,
+        rows: [{ ...baseRequest.rows[0]!, speakerKey: "Speaker 1" }],
+        model: "google/gemini-3-flash-preview"
+      },
+      {
+        audioTracks,
+        validateAudioModel: async () => {},
+        sliceAudioBatch: async ({ tasks }) => {
+          batchCalls.push(tasks.map((task) => `${task.row.rowId}:${task.track.trackId}:${task.track.fileName}`));
+          return {
+            clipsByRowId: new Map([
+              [
+                "r1",
+                [
+                  {
+                    trackId: "lane-1",
+                    speakerKey: "lane-a",
+                    trackLabel: "Speaker 1",
+                    format: "wav",
+                    base64: Buffer.from("r1:lane-1").toString("base64")
+                  }
+                ]
+              ]
+            ]),
+            errorsByRowId: new Map()
+          };
+        },
+        rewriteRow: async (context: RowRewriteContext) => {
+          seenContexts.push(context);
+          return `${context.currentRow.text}.`;
+        }
+      }
+    );
+
+    expect(batchCalls).toEqual([["r1:lane-1:lane-1.wav"]]);
+    expect(seenContexts[0]?.audioClips?.map((clip) => clip.trackId)).toEqual(["lane-1"]);
+  });
 });

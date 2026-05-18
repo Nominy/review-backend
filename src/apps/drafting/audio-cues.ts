@@ -323,12 +323,18 @@ function taskGroupKey(task: SliceAudioBatchTask, index: number): string {
 export async function sliceAudioTracksForRows({ tasks }: SliceAudioBatchArgs): Promise<SliceAudioBatchResult> {
   const clipsByRowId = new Map<string, AudioCueClipInput[]>();
   const errorsByRowId = new Map<string, string[]>();
-  const groups = new Map<string, { track: AudioCueAudioTrackInput; rows: DraftingTranscriptRowInput[] }>();
+  const groups = new Map<
+    string,
+    { track: AudioCueAudioTrackInput; rows: DraftingTranscriptRowInput[]; rowIds: Set<string> }
+  >();
 
   for (const [index, task] of tasks.entries()) {
     const key = taskGroupKey(task, index);
-    const group = groups.get(key) || { track: task.track, rows: [] };
-    group.rows.push(task.row);
+    const group = groups.get(key) || { track: task.track, rows: [], rowIds: new Set<string>() };
+    if (!group.rowIds.has(task.row.rowId)) {
+      group.rows.push(task.row);
+      group.rowIds.add(task.row.rowId);
+    }
     groups.set(key, group);
   }
 

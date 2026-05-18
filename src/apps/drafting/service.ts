@@ -132,6 +132,26 @@ function validateAudioTiming(row: GenerateDraftRequest["rows"][number]): void {
   }
 }
 
+function uniqueSelectedAudioTracks(
+  audioTracks: AudioCueAudioTrackInput[],
+  row: GenerateDraftRequest["rows"][number]
+): AudioCueAudioTrackInput[] {
+  const selectedTracks = selectAudioTracksForRow(audioTracks, row);
+  const seenTrackIds = new Set<string>();
+
+  return selectedTracks.filter((track) => {
+    const trackId = track.trackId.trim();
+    if (!trackId) {
+      return true;
+    }
+    if (seenTrackIds.has(trackId)) {
+      return false;
+    }
+    seenTrackIds.add(trackId);
+    return true;
+  });
+}
+
 function normalizeConcurrency(value: number | undefined): number {
   if (value === undefined || !Number.isFinite(value)) {
     return DEFAULT_ROW_CONCURRENCY;
@@ -170,7 +190,7 @@ async function prepareBatchedAudioInputs(args: {
   for (const row of args.rows) {
     try {
       validateAudioTiming(row);
-      const selectedTracks = selectAudioTracksForRow(args.audioTracks, row);
+      const selectedTracks = uniqueSelectedAudioTracks(args.audioTracks, row);
       if (!selectedTracks.length) {
         throw new Error(`missing_speaker_audio:${row.speakerKey}`);
       }
@@ -271,7 +291,7 @@ export async function generateDraft(
           audioClips = batchedAudio.clipsByRowId.get(currentRow.rowId);
         } else {
           validateAudioTiming(currentRow);
-          const selectedTracks = selectAudioTracksForRow(audioTracks, currentRow);
+          const selectedTracks = uniqueSelectedAudioTracks(audioTracks, currentRow);
           if (!selectedTracks.length) {
             throw new Error(`missing_speaker_audio:${currentRow.speakerKey}`);
           }
