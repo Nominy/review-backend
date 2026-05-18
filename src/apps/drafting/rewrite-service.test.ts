@@ -167,6 +167,48 @@ describe("generateDraft", () => {
     expect(response.draftRows.map((row) => row.rowId)).toEqual(["r1", "r2", "r3", "r4", "r5"]);
   });
 
+  test("runs row rewrites concurrently by default", async () => {
+    const previousEnvConcurrency = process.env.DRAFT_ROW_CONCURRENCY;
+    delete process.env.DRAFT_ROW_CONCURRENCY;
+
+    let activeRows = 0;
+    let maxActiveRows = 0;
+    const rows = Array.from({ length: 5 }, (_, index) => ({
+      rowId: `r${index + 1}`,
+      speakerKey: "spk-1",
+      startSeconds: index,
+      endSeconds: index + 1,
+      text: `row ${index + 1}`,
+      index
+    }));
+
+    try {
+      await generateDraft(
+        {
+          ...baseRequest,
+          rows
+        },
+        {
+          rewriteRow: async (context: RowRewriteContext) => {
+            activeRows += 1;
+            maxActiveRows = Math.max(maxActiveRows, activeRows);
+            await delay(10);
+            activeRows -= 1;
+            return `${context.currentRow.text}.`;
+          }
+        }
+      );
+    } finally {
+      if (previousEnvConcurrency === undefined) {
+        delete process.env.DRAFT_ROW_CONCURRENCY;
+      } else {
+        process.env.DRAFT_ROW_CONCURRENCY = previousEnvConcurrency;
+      }
+    }
+
+    expect(maxActiveRows).toBe(5);
+  });
+
   test("retries a failed row call once before succeeding", async () => {
     const attempts = new Map<string, number>();
 

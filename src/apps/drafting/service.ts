@@ -45,8 +45,6 @@ type GenerateDraftDeps = {
   }) => void | Promise<void>;
 };
 
-const DEFAULT_ROW_CONCURRENCY = 3;
-
 function summarizeDraftRows(draftRows: DraftRowResult[]): DraftSummary {
   const anomalyCounts: Record<string, number> = {};
   let rewrittenRows = 0;
@@ -152,9 +150,9 @@ function uniqueSelectedAudioTracks(
   });
 }
 
-function normalizeConcurrency(value: number | undefined): number {
+function normalizeConcurrency(value: number | undefined, defaultConcurrency: number): number {
   if (value === undefined || !Number.isFinite(value)) {
-    return DEFAULT_ROW_CONCURRENCY;
+    return Math.max(1, defaultConcurrency);
   }
   return Math.max(1, Math.floor(value));
 }
@@ -275,7 +273,7 @@ export async function generateDraft(
       }));
   const maxAttemptsPerRow = Math.max(1, deps.maxAttemptsPerRow ?? 2);
   const envRowConcurrency = process.env.DRAFT_ROW_CONCURRENCY ? Number(process.env.DRAFT_ROW_CONCURRENCY) : undefined;
-  const rowConcurrency = normalizeConcurrency(deps.rowConcurrency ?? envRowConcurrency);
+  const rowConcurrency = normalizeConcurrency(deps.rowConcurrency ?? envRowConcurrency, request.rows.length);
 
   const draftRows: Array<DraftRowResult | undefined> = new Array(request.rows.length);
   let completedRowCount = 0;
