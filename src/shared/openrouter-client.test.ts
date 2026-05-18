@@ -8,6 +8,70 @@ afterEach(() => {
 });
 
 describe("requestOpenRouterChat", () => {
+  it("sends a requested flex service tier", async () => {
+    let postedBody: any = null;
+
+    globalThis.fetch = ((_: string | URL | globalThis.Request, init?: RequestInit) => {
+      postedBody = JSON.parse(String(init?.body || "{}"));
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: "content"
+                }
+              }
+            ]
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      );
+    }) as unknown as typeof fetch;
+
+    await requestOpenRouterChat({
+      apiKey: "test-key",
+      model: "openai/test-model",
+      messages: [{ role: "user", content: "hello" }],
+      serviceTier: "flex",
+      title: "test"
+    });
+
+    expect(postedBody.service_tier).toBe("flex");
+  });
+
+  it("omits service_tier when client selects default capacity", async () => {
+    let postedBody: any = null;
+
+    globalThis.fetch = ((_: string | URL | globalThis.Request, init?: RequestInit) => {
+      postedBody = JSON.parse(String(init?.body || "{}"));
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: "content"
+                }
+              }
+            ]
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      );
+    }) as unknown as typeof fetch;
+
+    await requestOpenRouterChat({
+      apiKey: "test-key",
+      model: "openai/test-model",
+      messages: [{ role: "user", content: "hello" }],
+      serviceTier: "default",
+      title: "test"
+    });
+
+    expect("service_tier" in postedBody).toBe(false);
+  });
+
   it("retries without reasoning when routing rejects reasoning parameters", async () => {
     let callCount = 0;
 

@@ -1,3 +1,7 @@
+import type { OpenRouterServiceTier } from "../../shared/openrouter-client";
+
+export type { OpenRouterServiceTier };
+
 export type DraftingProjectPresetId = "ru-gold-2sp-v1";
 
 export interface DraftingTranscriptRowInput {
@@ -16,6 +20,7 @@ export interface GenerateDraftRequest {
   rows: DraftingTranscriptRowInput[];
   openRouterApiKey?: string;
   model?: string;
+  serviceTier?: OpenRouterServiceTier;
 }
 
 export interface AudioCueAudioTrackInput {
@@ -115,5 +120,6 @@ export interface RewriteRowDeps {
   systemPrompt: string;
   preset: LoadedProjectPreset;
   model: string;
+  serviceTier?: OpenRouterServiceTier;
   testMode: boolean;
 }

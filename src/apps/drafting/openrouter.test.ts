@@ -90,4 +90,34 @@ describe("rewriteRowWithModel", () => {
     expect(userContent.some((part) => part.type === "input_audio")).toBe(true);
     expect(userContent[0].type).toBe("text");
   });
+
+  test("passes the selected service tier into OpenRouter requests", async () => {
+    let postedBody: any = null;
+    globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      postedBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ choices: [{ message: { content: "Privet." } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }) as unknown as typeof fetch;
+
+    await rewriteRowWithModel(
+      {
+        currentRow: {
+          rowId: "r1",
+          speakerKey: "Speaker 1",
+          startSeconds: 1,
+          endSeconds: 2,
+          text: "privet",
+          index: 0
+        }
+      },
+      {
+        ...deps,
+        serviceTier: "priority"
+      }
+    );
+
+    expect(postedBody.service_tier).toBe("priority");
+  });
 });

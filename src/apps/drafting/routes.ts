@@ -70,6 +70,17 @@ function assertGenerateDraftBody(body: unknown): asserts body is GenerateDraftRe
   }
 
   if (
+    "serviceTier" in body &&
+    body.serviceTier !== undefined &&
+    body.serviceTier !== null &&
+    body.serviceTier !== "default" &&
+    body.serviceTier !== "flex" &&
+    body.serviceTier !== "priority"
+  ) {
+    throw new Error("serviceTier must be default, flex, or priority when provided.");
+  }
+
+  if (
     "draftSessionId" in body &&
     body.draftSessionId !== undefined &&
     body.draftSessionId !== null &&

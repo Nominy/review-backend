@@ -101,6 +101,7 @@ export async function rewriteRowWithModel(
     ],
     providerSort: "latency",
     reasoningEffort: "low",
+    serviceTier: deps.serviceTier,
     temperature: 0.15,
     title: "Babel Gold Drafting"
   });

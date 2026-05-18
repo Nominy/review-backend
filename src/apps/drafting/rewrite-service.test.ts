@@ -1,6 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { generateDraft } from "./service";
 import type { AudioCueAudioTrackInput, GenerateDraftRequest, RowRewriteContext } from "./types";
+
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -280,6 +286,57 @@ describe("generateDraft", () => {
     ).rejects.toThrow("checked openai/default-model");
 
     expect(seenModels).toEqual(["openai/default-model"]);
+  });
+
+  test("uses flex service tier for normal model requests by default", async () => {
+    let postedBody: any = null;
+    globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      postedBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ choices: [{ message: { content: "Privet." } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }) as unknown as typeof fetch;
+
+    await generateDraft(
+      {
+        ...baseRequest,
+        rows: [baseRequest.rows[0]!],
+        model: "google/gemini-3-flash-preview"
+      },
+      {
+        testMode: false,
+        validateModel: async () => {}
+      }
+    );
+
+    expect(postedBody.service_tier).toBe("flex");
+  });
+
+  test("omits service tier for normal model requests when default is selected", async () => {
+    let postedBody: any = null;
+    globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      postedBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ choices: [{ message: { content: "Privet." } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }) as unknown as typeof fetch;
+
+    await generateDraft(
+      {
+        ...baseRequest,
+        rows: [baseRequest.rows[0]!],
+        model: "google/gemini-3-flash-preview",
+        serviceTier: "default"
+      },
+      {
+        testMode: false,
+        validateModel: async () => {}
+      }
+    );
+
+    expect("service_tier" in postedBody).toBe(false);
   });
 
   test("passes matching speaker-lane audio clips into the normal row rewrite context", async () => {

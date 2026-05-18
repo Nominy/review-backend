@@ -20,6 +20,7 @@ import type {
   DraftSummary,
   GenerateDraftRequest,
   GenerateDraftResponse,
+  OpenRouterServiceTier,
   RowRewriteContext
 } from "./types";
 import { validateRewrittenRow } from "./validators";
@@ -130,6 +131,10 @@ function validateAudioTiming(row: GenerateDraftRequest["rows"][number]): void {
   }
 }
 
+function normalizeServiceTier(value: GenerateDraftRequest["serviceTier"]): OpenRouterServiceTier {
+  return value === "default" || value === "priority" || value === "flex" ? value : "flex";
+}
+
 function uniqueSelectedAudioTracks(
   audioTracks: AudioCueAudioTrackInput[],
   row: GenerateDraftRequest["rows"][number]
@@ -234,6 +239,7 @@ export async function generateDraft(
   const systemPrompt = buildSystemPrompt(preset);
   const requestedApiKey = typeof request.openRouterApiKey === "string" ? request.openRouterApiKey.trim() : "";
   const apiKey = deps.apiKey ?? requestedApiKey;
+  const serviceTier = normalizeServiceTier(request.serviceTier);
 
   if (!deps.rewriteRow && !testMode && !apiKey) {
     throw new Error("openRouterApiKey is required.");
@@ -268,6 +274,7 @@ export async function generateDraft(
         apiKey,
         model,
         preset,
+        serviceTier,
         systemPrompt,
         testMode
       }));

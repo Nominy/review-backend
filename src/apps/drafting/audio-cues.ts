@@ -96,6 +96,10 @@ function getAudioCueModel(request: AudioCueDraftRequest, deps: GenerateAudioCueD
   return deps.model || requestedModel || DEFAULT_AUDIO_CUE_MODEL;
 }
 
+function normalizeServiceTier(value: AudioCueDraftRequest["serviceTier"]) {
+  return value === "default" || value === "priority" || value === "flex" ? value : "flex";
+}
+
 export async function loadAudioCueTagSystem(): Promise<string> {
   if (cachedTagSystem === null) {
     cachedTagSystem = (await Bun.file(TAG_SYSTEM_PATH).text()).trim();
@@ -420,7 +424,7 @@ function buildAudioCuePrompt(context: AudioCueRewriteContext): string {
 
 async function defaultRewriteRowWithAudio(
   context: AudioCueRewriteContext,
-  options: { apiKey: string; model: string }
+  options: { apiKey: string; model: string; serviceTier: AudioCueDraftRequest["serviceTier"] }
 ): Promise<string> {
   const content = [
     { type: "text" as const, text: buildAudioCuePrompt(context) },
@@ -445,6 +449,7 @@ async function defaultRewriteRowWithAudio(
     apiKey: options.apiKey,
     model: options.model,
     messages: [{ role: "user", content }],
+    serviceTier: options.serviceTier,
     temperature: 0,
     title: "Babel Audio Cues"
   });
@@ -467,6 +472,7 @@ export async function generateAudioCueDraft(
   }
 
   const model = getAudioCueModel(request, deps);
+  const serviceTier = normalizeServiceTier(request.serviceTier);
   await (deps.validateAudioModel ?? assertOpenRouterModelSupportsAudio)(model);
 
   const tagSystem = await loadAudioCueTagSystem();
@@ -477,7 +483,8 @@ export async function generateAudioCueDraft(
     ((context: AudioCueRewriteContext) =>
       defaultRewriteRowWithAudio(context, {
         apiKey,
-        model
+        model,
+        serviceTier
       }));
 
   const draftRows: Array<DraftRowResult | undefined> = new Array(request.rows.length);

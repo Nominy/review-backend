@@ -22,6 +22,7 @@ export type OpenRouterMessage = {
 
 export type OpenRouterReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 export type OpenRouterProviderSort = "price" | "throughput" | "latency";
+export type OpenRouterServiceTier = "default" | "flex" | "priority";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_CREDITS_URL = "https://openrouter.ai/api/v1/credits";
@@ -58,6 +59,7 @@ async function requestOpenRouterChatCore(args: {
   temperature?: number;
   reasoningEffort?: OpenRouterReasoningEffort;
   providerSort?: OpenRouterProviderSort;
+  serviceTier?: OpenRouterServiceTier;
   provider?: {
     sort?: OpenRouterProviderSort;
     allow_fallbacks?: boolean;
@@ -88,6 +90,7 @@ async function requestOpenRouterChatCore(args: {
           effort: args.reasoningEffort,
           exclude: true
         } } : {}),
+      ...(args.serviceTier && args.serviceTier !== "default" ? { service_tier: args.serviceTier } : {}),
       ...(provider ? { provider } : {}),
       messages: args.messages
     })
@@ -144,6 +147,7 @@ export async function requestOpenRouterChat(args: {
   temperature?: number;
   reasoningEffort?: OpenRouterReasoningEffort;
   providerSort?: OpenRouterProviderSort;
+  serviceTier?: OpenRouterServiceTier;
   title: string;
 }): Promise<string> {
   if (!args.reasoningEffort) {
@@ -178,6 +182,7 @@ export async function requestOpenRouterChat(args: {
         messages: args.messages,
         temperature: args.temperature,
         reasoningEffort: plan.useReasoning ? args.reasoningEffort : undefined,
+        serviceTier: args.serviceTier,
         provider: plan.useProvider ? provider : null,
         title: args.title
       });
