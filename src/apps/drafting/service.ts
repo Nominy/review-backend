@@ -4,7 +4,11 @@ import {
   loadAudioCueTagSystem,
   selectAudioTracksForRow,
   sliceAudioTrackForRow,
-  type SliceAudioArgs
+  sliceAudioTracksForRows,
+  type SliceAudioArgs,
+  type SliceAudioBatchArgs,
+  type SliceAudioBatchResult,
+  type SliceAudioBatchTask
 } from "./audio-cues";
 import { rewriteRowWithModel } from "./openrouter";
 import { buildSystemPrompt } from "./prompt";
@@ -24,6 +28,7 @@ type GenerateDraftDeps = {
   rewriteRow?: (context: RowRewriteContext) => Promise<string>;
   audioTracks?: AudioCueAudioTrackInput[];
   sliceAudio?: (args: SliceAudioArgs) => Promise<AudioCueClipInput>;
+  sliceAudioBatch?: (args: SliceAudioBatchArgs) => Promise<SliceAudioBatchResult>;
   validateAudioModel?: (model: string) => Promise<void>;
   loadTagSystem?: () => Promise<string>;
   model?: string;
@@ -101,6 +106,32 @@ function audioWarning(error: unknown): string {
   return `audio_input_error:${message}`;
 }
 
+function appendMapValue<K, V>(map: Map<K, V[]>, key: K, value: V): void {
+  const current = map.get(key) || [];
+  current.push(value);
+  map.set(key, current);
+}
+
+function appendMapValues<K, V>(map: Map<K, V[]>, key: K, values: V[] | undefined): void {
+  if (!values?.length) {
+    return;
+  }
+
+  for (const value of values) {
+    appendMapValue(map, key, value);
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function validateAudioTiming(row: GenerateDraftRequest["rows"][number]): void {
+  if (row.startSeconds === null || row.endSeconds === null || row.endSeconds <= row.startSeconds) {
+    throw new Error("missing_row_timing");
+  }
+}
+
 function normalizeConcurrency(value: number | undefined): number {
   if (value === undefined || !Number.isFinite(value)) {
     return DEFAULT_ROW_CONCURRENCY;
@@ -125,6 +156,53 @@ async function runWithConcurrency<T>(
       }
     })
   );
+}
+
+async function prepareBatchedAudioInputs(args: {
+  rows: GenerateDraftRequest["rows"];
+  audioTracks: AudioCueAudioTrackInput[];
+  sliceAudioBatch: (args: SliceAudioBatchArgs) => Promise<SliceAudioBatchResult>;
+}): Promise<SliceAudioBatchResult> {
+  const tasks: SliceAudioBatchTask[] = [];
+  const clipsByRowId = new Map<string, AudioCueClipInput[]>();
+  const errorsByRowId = new Map<string, string[]>();
+
+  for (const row of args.rows) {
+    try {
+      validateAudioTiming(row);
+      const selectedTracks = selectAudioTracksForRow(args.audioTracks, row);
+      if (!selectedTracks.length) {
+        throw new Error(`missing_speaker_audio:${row.speakerKey}`);
+      }
+
+      for (const track of selectedTracks) {
+        tasks.push({ track, row });
+      }
+    } catch (error) {
+      appendMapValue(errorsByRowId, row.rowId, errorMessage(error));
+    }
+  }
+
+  if (!tasks.length) {
+    return { clipsByRowId, errorsByRowId };
+  }
+
+  try {
+    const batchResult = await args.sliceAudioBatch({ tasks });
+    for (const [rowId, clips] of batchResult.clipsByRowId) {
+      appendMapValues(clipsByRowId, rowId, clips);
+    }
+    for (const [rowId, errors] of batchResult.errorsByRowId) {
+      appendMapValues(errorsByRowId, rowId, errors);
+    }
+  } catch (error) {
+    const message = errorMessage(error);
+    for (const task of tasks) {
+      appendMapValue(errorsByRowId, task.row.rowId, message);
+    }
+  }
+
+  return { clipsByRowId, errorsByRowId };
 }
 
 export async function generateDraft(
@@ -156,6 +234,14 @@ export async function generateDraft(
 
   const tagSystem = shouldUseAudio ? await (deps.loadTagSystem ?? loadAudioCueTagSystem)() : undefined;
   const sliceAudio = deps.sliceAudio ?? sliceAudioTrackForRow;
+  const useBatchedAudioSlicing = shouldUseAudio && !deps.sliceAudio;
+  const batchedAudio = useBatchedAudioSlicing
+    ? await prepareBatchedAudioInputs({
+        rows: request.rows,
+        audioTracks,
+        sliceAudioBatch: deps.sliceAudioBatch ?? sliceAudioTracksForRows
+      })
+    : undefined;
 
   const rewriteRow =
     deps.rewriteRow ||
@@ -180,27 +266,30 @@ export async function generateDraft(
 
     if (shouldUseAudio) {
       try {
-        if (currentRow.startSeconds === null || currentRow.endSeconds === null) {
-          throw new Error("missing_row_timing");
+        if (batchedAudio) {
+          audioWarnings.push(...(batchedAudio.errorsByRowId.get(currentRow.rowId) || []).map(audioWarning));
+          audioClips = batchedAudio.clipsByRowId.get(currentRow.rowId);
+        } else {
+          validateAudioTiming(currentRow);
+          const selectedTracks = selectAudioTracksForRow(audioTracks, currentRow);
+          if (!selectedTracks.length) {
+            throw new Error(`missing_speaker_audio:${currentRow.speakerKey}`);
+          }
+          audioClips = await Promise.all(
+            selectedTracks.map(async (track) => {
+              const clip = await sliceAudio({
+                track,
+                row: currentRow
+              });
+              return {
+                ...clip,
+                trackId: track.trackId,
+                speakerKey: track.speakerKey,
+                trackLabel: track.trackLabel
+              };
+            })
+          );
         }
-        const selectedTracks = selectAudioTracksForRow(audioTracks, currentRow);
-        if (!selectedTracks.length) {
-          throw new Error(`missing_speaker_audio:${currentRow.speakerKey}`);
-        }
-        audioClips = await Promise.all(
-          selectedTracks.map(async (track) => {
-            const clip = await sliceAudio({
-              track,
-              row: currentRow
-            });
-            return {
-              ...clip,
-              trackId: track.trackId,
-              speakerKey: track.speakerKey,
-              trackLabel: track.trackLabel
-            };
-          })
-        );
       } catch (error) {
         audioWarnings.push(audioWarning(error));
       }

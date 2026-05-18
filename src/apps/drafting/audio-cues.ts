@@ -30,6 +30,17 @@ export type SliceAudioArgs = {
   row: DraftingTranscriptRowInput;
 };
 
+export type SliceAudioBatchTask = SliceAudioArgs;
+
+export type SliceAudioBatchArgs = {
+  tasks: SliceAudioBatchTask[];
+};
+
+export type SliceAudioBatchResult = {
+  clipsByRowId: Map<string, AudioCueClipInput[]>;
+  errorsByRowId: Map<string, string[]>;
+};
+
 type GenerateAudioCueDraftDeps = {
   validateAudioModel?: (model: string) => Promise<void>;
   sliceAudio?: (args: SliceAudioArgs) => Promise<AudioCueClipInput>;
@@ -169,15 +180,67 @@ export function buildAudioCueTempPaths(id: string, fileName: string): { inputPat
   };
 }
 
-export async function sliceAudioTrackForRow({ track, row }: SliceAudioArgs): Promise<AudioCueClipInput> {
+export function buildAudioCueBatchTempPaths(
+  id: string,
+  fileName: string,
+  outputCount: number
+): { inputPath: string; outputPaths: string[] } {
+  const rawExtension = path.extname(fileName || "");
+  const extension = /^\.[a-z0-9]+$/i.test(rawExtension) ? rawExtension : ".bin";
+  const basePath = path.join(tmpdir(), `babel-audio-cue-${id}`);
+  return {
+    inputPath: `${basePath}.input${extension}`,
+    outputPaths: Array.from({ length: outputCount }, (_, index) => `${basePath}.output-${index}.wav`)
+  };
+}
+
+function formatFfmpegSeconds(value: number): string {
+  return Number(value.toFixed(6)).toString();
+}
+
+function getAudioSliceRange(row: DraftingTranscriptRowInput): { start: number; duration: number } {
   if (row.startSeconds === null || row.endSeconds === null || row.endSeconds <= row.startSeconds) {
     throw new Error("missing_row_timing");
   }
 
+  return {
+    start: Math.max(0, row.startSeconds - AUDIO_PADDING_SECONDS),
+    duration: Math.max(0.05, row.endSeconds - row.startSeconds + AUDIO_PADDING_SECONDS * 2)
+  };
+}
+
+export function buildAudioCueBatchFfmpegArgs(
+  inputPath: string,
+  slices: Array<{ row: DraftingTranscriptRowInput; outputPath: string }>
+): string[] {
+  const filterGraph = slices
+    .map(({ row }, index) => {
+      const range = getAudioSliceRange(row);
+      return `${[
+        `[0:a]atrim=start=${formatFfmpegSeconds(range.start)}:duration=${formatFfmpegSeconds(range.duration)}`,
+        "asetpts=PTS-STARTPTS",
+        "aformat=channel_layouts=mono:sample_rates=24000"
+      ].join(",")}[out${index}]`;
+    })
+    .join(";");
+
+  return [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-y",
+    "-i",
+    inputPath,
+    "-filter_complex",
+    filterGraph,
+    ...slices.flatMap(({ outputPath }, index) => ["-map", `[out${index}]`, "-f", "wav", outputPath])
+  ];
+}
+
+export async function sliceAudioTrackForRow({ track, row }: SliceAudioArgs): Promise<AudioCueClipInput> {
   const id = randomUUID();
   const { inputPath, outputPath } = buildAudioCueTempPaths(id, track.fileName);
-  const start = Math.max(0, row.startSeconds - AUDIO_PADDING_SECONDS);
-  const duration = Math.max(0.05, row.endSeconds - row.startSeconds + AUDIO_PADDING_SECONDS * 2);
+  const range = getAudioSliceRange(row);
 
   try {
     await writeFile(inputPath, Buffer.from(track.bytes));
@@ -187,11 +250,11 @@ export async function sliceAudioTrackForRow({ track, row }: SliceAudioArgs): Pro
       "error",
       "-y",
       "-ss",
-      String(start),
+      String(range.start),
       "-i",
       inputPath,
       "-t",
-      String(duration),
+      String(range.duration),
       "-ac",
       "1",
       "-ar",
@@ -211,6 +274,81 @@ export async function sliceAudioTrackForRow({ track, row }: SliceAudioArgs): Pro
   } finally {
     await Promise.allSettled([unlink(inputPath), unlink(outputPath)]);
   }
+}
+
+function appendMapValue<K, V>(map: Map<K, V[]>, key: K, value: V): void {
+  const current = map.get(key) || [];
+  current.push(value);
+  map.set(key, current);
+}
+
+async function sliceAudioTrackForRows(
+  track: AudioCueAudioTrackInput,
+  rows: DraftingTranscriptRowInput[]
+): Promise<Array<{ rowId: string; clip: AudioCueClipInput }>> {
+  const id = randomUUID();
+  const { inputPath, outputPaths } = buildAudioCueBatchTempPaths(id, track.fileName, rows.length);
+  const slices = rows.map((row, index) => ({
+    row,
+    outputPath: outputPaths[index]!
+  }));
+
+  try {
+    await writeFile(inputPath, Buffer.from(track.bytes));
+    await execFileAsync("ffmpeg", buildAudioCueBatchFfmpegArgs(inputPath, slices));
+    return await Promise.all(
+      slices.map(async ({ row, outputPath }) => {
+        const wav = await readFile(outputPath);
+        return {
+          rowId: row.rowId,
+          clip: {
+            trackId: track.trackId,
+            speakerKey: track.speakerKey,
+            trackLabel: track.trackLabel,
+            format: "wav",
+            base64: wav.toString("base64")
+          }
+        };
+      })
+    );
+  } finally {
+    await Promise.allSettled([unlink(inputPath), ...outputPaths.map((outputPath) => unlink(outputPath))]);
+  }
+}
+
+function taskGroupKey(task: SliceAudioBatchTask, index: number): string {
+  return task.track.trackId || `${task.track.fileName}:${index}`;
+}
+
+export async function sliceAudioTracksForRows({ tasks }: SliceAudioBatchArgs): Promise<SliceAudioBatchResult> {
+  const clipsByRowId = new Map<string, AudioCueClipInput[]>();
+  const errorsByRowId = new Map<string, string[]>();
+  const groups = new Map<string, { track: AudioCueAudioTrackInput; rows: DraftingTranscriptRowInput[] }>();
+
+  for (const [index, task] of tasks.entries()) {
+    const key = taskGroupKey(task, index);
+    const group = groups.get(key) || { track: task.track, rows: [] };
+    group.rows.push(task.row);
+    groups.set(key, group);
+  }
+
+  await Promise.all(
+    Array.from(groups.values()).map(async ({ track, rows }) => {
+      try {
+        const clips = await sliceAudioTrackForRows(track, rows);
+        for (const { rowId, clip } of clips) {
+          appendMapValue(clipsByRowId, rowId, clip);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        for (const row of rows) {
+          appendMapValue(errorsByRowId, row.rowId, message);
+        }
+      }
+    })
+  );
+
+  return { clipsByRowId, errorsByRowId };
 }
 
 function normalizeSpeakerKey(value: string | undefined): string {

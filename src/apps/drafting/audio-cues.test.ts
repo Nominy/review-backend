@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildAudioCueTempPaths, generateAudioCueDraft } from "./audio-cues";
+import { buildAudioCueBatchFfmpegArgs, buildAudioCueTempPaths, generateAudioCueDraft } from "./audio-cues";
 import type { AudioCueDraftRequest } from "./types";
 
 const baseRequest: AudioCueDraftRequest = {
@@ -40,6 +40,40 @@ describe("generateAudioCueDraft", () => {
     expect(paths.inputPath).not.toBe(paths.outputPath);
     expect(paths.inputPath).toEndWith(".input.wav");
     expect(paths.outputPath).toEndWith(".output.wav");
+  });
+
+  test("builds one ffmpeg command that trims multiple row clips from one input", () => {
+    const args = buildAudioCueBatchFfmpegArgs("input.wav", [
+      {
+        row: {
+          ...baseRequest.rows[0]!,
+          startSeconds: 1,
+          endSeconds: 2
+        },
+        outputPath: "row-1.wav"
+      },
+      {
+        row: {
+          ...baseRequest.rows[0]!,
+          rowId: "r2",
+          startSeconds: 3,
+          endSeconds: 4.25
+        },
+        outputPath: "row-2.wav"
+      }
+    ]);
+
+    const filterGraph = args[args.indexOf("-filter_complex") + 1];
+
+    expect(filterGraph).toContain("atrim=start=0.8:duration=1.4");
+    expect(filterGraph).toContain("[out0]");
+    expect(filterGraph).not.toContain(",[out0]");
+    expect(filterGraph).toContain("atrim=start=2.8:duration=1.65");
+    expect(filterGraph).toContain("[out1]");
+    expect(filterGraph).not.toContain(",[out1]");
+    expect(args).toContain("row-1.wav");
+    expect(args).toContain("row-2.wav");
+    expect(args.filter((arg) => arg === "-map")).toHaveLength(2);
   });
 
   test("passes row-length slices from every uploaded track into the audio rewrite request", async () => {

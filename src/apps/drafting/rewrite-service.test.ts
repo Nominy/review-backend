@@ -304,4 +304,72 @@ describe("generateDraft", () => {
       true
     );
   });
+
+  test("batches default audio slicing before normal row rewrites", async () => {
+    const audioTracks: AudioCueAudioTrackInput[] = [
+      {
+        trackId: "lane-1",
+        speakerKey: "lane-a",
+        trackLabel: "Speaker 1",
+        fileName: "lane-1.wav",
+        mimeType: "audio/wav",
+        bytes: new Uint8Array([1, 2, 3])
+      },
+      {
+        trackId: "lane-2",
+        speakerKey: "lane-b",
+        trackLabel: "Speaker 2",
+        fileName: "lane-2.wav",
+        mimeType: "audio/wav",
+        bytes: new Uint8Array([4, 5, 6])
+      }
+    ];
+    const batchCalls: string[][] = [];
+    const seenContexts: RowRewriteContext[] = [];
+
+    await generateDraft(
+      {
+        ...baseRequest,
+        rows: [
+          { ...baseRequest.rows[0]!, speakerKey: "Speaker 1" },
+          { ...baseRequest.rows[1]!, speakerKey: "Speaker 2" }
+        ],
+        model: "google/gemini-3-flash-preview"
+      },
+      {
+        audioTracks,
+        validateAudioModel: async () => {},
+        sliceAudioBatch: async ({ tasks }) => {
+          batchCalls.push(tasks.map((task) => `${task.row.rowId}:${task.track.trackId}`));
+          return {
+            clipsByRowId: new Map(
+              tasks.map((task) => [
+                task.row.rowId,
+                [
+                  {
+                    trackId: task.track.trackId,
+                    speakerKey: task.track.speakerKey,
+                    trackLabel: task.track.trackLabel,
+                    format: "wav" as const,
+                    base64: Buffer.from(`${task.row.rowId}:${task.track.trackId}`).toString("base64")
+                  }
+                ]
+              ])
+            ),
+            errorsByRowId: new Map()
+          };
+        },
+        rewriteRow: async (context: RowRewriteContext) => {
+          seenContexts.push(context);
+          return `${context.currentRow.text}.`;
+        }
+      }
+    );
+
+    expect(batchCalls).toEqual([["r1:lane-1", "r2:lane-2"]]);
+    expect(seenContexts.map((context) => context.audioClips?.map((clip) => clip.trackId))).toEqual([
+      ["lane-1"],
+      ["lane-2"]
+    ]);
+  });
 });
