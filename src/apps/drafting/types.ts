@@ -40,6 +40,9 @@ export interface AudioCueClipInput {
   trackId: string;
   speakerKey?: string;
   trackLabel?: string;
+  clipStartSeconds?: number;
+  clipEndSeconds?: number;
+  truncatedAtEnd?: boolean;
   format: string;
   base64: string;
 }

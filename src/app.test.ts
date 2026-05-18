@@ -4,6 +4,7 @@ import { clearDraftSessionsForTest } from "./apps/drafting/session-store";
 import { BACKEND_VERSION } from "./version";
 
 const originalFetch = globalThis.fetch;
+const originalDraftStreamKeepaliveMs = process.env.DRAFT_STREAM_KEEPALIVE_MS;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -11,6 +12,11 @@ function delay(ms: number): Promise<void> {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  if (originalDraftStreamKeepaliveMs === undefined) {
+    delete process.env.DRAFT_STREAM_KEEPALIVE_MS;
+  } else {
+    process.env.DRAFT_STREAM_KEEPALIVE_MS = originalDraftStreamKeepaliveMs;
+  }
   clearDraftSessionsForTest();
 });
 
@@ -199,6 +205,78 @@ describe("createApp", () => {
       }
     ]);
     expect(chatCalls).toBe(1);
+  });
+
+  it("keeps long-running draft streams alive while waiting for rows", async () => {
+    process.env.DRAFT_STREAM_KEEPALIVE_MS = "1";
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const target = String(url);
+      if (target.includes("/api/v1/models")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "google/gemini-3-flash-preview",
+                architecture: { input_modalities: ["text", "audio"] }
+              }
+            ]
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          }
+        );
+      }
+
+      if (target.includes("/api/v1/chat/completions")) {
+        await delay(25);
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({ rewrittenText: "Privet." })
+                }
+              }
+            ]
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          }
+        );
+      }
+
+      throw new Error(`Unexpected fetch ${target}`);
+    }) as unknown as typeof fetch;
+
+    const response = await createApp().handle(
+      new Request("http://localhost/api/draft/generate/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectPreset: "ru-gold-2sp-v1",
+          jobId: "job-keepalive",
+          rows: [
+            {
+              rowId: "r1",
+              speakerKey: "speaker-1",
+              startSeconds: 0,
+              endSeconds: 1,
+              text: "privet",
+              index: 0
+            }
+          ],
+          openRouterApiKey: "sk-or-test",
+          model: "google/gemini-3-flash-preview"
+        })
+      })
+    );
+    const text = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(text).toContain(": keepalive");
+    expect(text).toContain("event: done");
   });
 
   it("serves the dedicated gold drafting privacy page", async () => {

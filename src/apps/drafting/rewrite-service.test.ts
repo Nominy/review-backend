@@ -241,6 +241,62 @@ describe("generateDraft", () => {
     });
   });
 
+  test("retries an empty model response before validating the row", async () => {
+    let chatCalls = 0;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const target = String(url);
+      if (!target.includes("/api/v1/chat/completions")) {
+        throw new Error(`Unexpected fetch ${target}`);
+      }
+
+      chatCalls += 1;
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: chatCalls === 1 ? "" : "А Spotify и YouTube Music."
+              }
+            }
+          ]
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        }
+      );
+    }) as unknown as typeof fetch;
+
+    const response = await generateDraft(
+      {
+        ...baseRequest,
+        rows: [
+          {
+            rowId: "r1",
+            speakerKey: "spk-1",
+            startSeconds: 1,
+            endSeconds: 2,
+            text: "А Spotify и YouTube Music",
+            index: 0
+          }
+        ],
+        model: "google/gemini-3-flash-preview"
+      },
+      {
+        testMode: false,
+        validateModel: async () => {}
+      }
+    );
+
+    expect(chatCalls).toBe(2);
+    expect(response.draftRows[0]).toEqual({
+      rowId: "r1",
+      rewrittenText: "А Spotify и YouTube Music.",
+      status: "rewritten",
+      warnings: ["length_delta"]
+    });
+  });
+
   test("validates the selected OpenRouter model before rewriting rows", async () => {
     const seenModels: string[] = [];
 

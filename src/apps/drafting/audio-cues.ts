@@ -24,6 +24,7 @@ const TAG_SYSTEM_PATH = fileURLToPath(
 );
 export const DEFAULT_AUDIO_CUE_MODEL = "google/gemini-3-flash-preview";
 const AUDIO_PADDING_SECONDS = 0.2;
+const MIN_AUDIO_SLICE_SECONDS = 0.05;
 
 export type SliceAudioArgs = {
   track: AudioCueAudioTrackInput;
@@ -39,6 +40,16 @@ export type SliceAudioBatchArgs = {
 export type SliceAudioBatchResult = {
   clipsByRowId: Map<string, AudioCueClipInput[]>;
   errorsByRowId: Map<string, string[]>;
+};
+
+export type AudioCueBatchSlice = {
+  row: DraftingTranscriptRowInput;
+  outputPath: string;
+  range: {
+    start: number;
+    duration: number;
+    truncatedAtEnd: boolean;
+  };
 };
 
 type GenerateAudioCueDraftDeps = {
@@ -202,24 +213,67 @@ function formatFfmpegSeconds(value: number): string {
   return Number(value.toFixed(6)).toString();
 }
 
-function getAudioSliceRange(row: DraftingTranscriptRowInput): { start: number; duration: number } {
+function getAudioSliceRange(
+  row: DraftingTranscriptRowInput,
+  trackDurationSeconds?: number | null
+): { start: number; duration: number; truncatedAtEnd: boolean } | null {
   if (row.startSeconds === null || row.endSeconds === null || row.endSeconds <= row.startSeconds) {
     throw new Error("missing_row_timing");
   }
 
+  const start = Math.max(0, row.startSeconds - AUDIO_PADDING_SECONDS);
+  const requestedEnd = row.endSeconds + AUDIO_PADDING_SECONDS;
+  const hasTrackDuration = typeof trackDurationSeconds === "number" && Number.isFinite(trackDurationSeconds);
+  const end = hasTrackDuration ? Math.min(requestedEnd, trackDurationSeconds) : requestedEnd;
+  const duration = end - start;
+  const truncatedAtEnd = hasTrackDuration && requestedEnd > trackDurationSeconds;
+
+  if (hasTrackDuration && duration < MIN_AUDIO_SLICE_SECONDS) {
+    return null;
+  }
+
   return {
-    start: Math.max(0, row.startSeconds - AUDIO_PADDING_SECONDS),
-    duration: Math.max(0.05, row.endSeconds - row.startSeconds + AUDIO_PADDING_SECONDS * 2)
+    start,
+    duration: hasTrackDuration ? duration : Math.max(MIN_AUDIO_SLICE_SECONDS, duration),
+    truncatedAtEnd
+  };
+}
+
+export function buildAudioCueBatchPlan(
+  slices: Array<{ row: DraftingTranscriptRowInput; outputPath: string }>,
+  trackDurationSeconds?: number | null
+): { slices: AudioCueBatchSlice[]; skippedRows: DraftingTranscriptRowInput[] } {
+  const plannedSlices: AudioCueBatchSlice[] = [];
+  const skippedRows: DraftingTranscriptRowInput[] = [];
+
+  for (const slice of slices) {
+    const range = getAudioSliceRange(slice.row, trackDurationSeconds);
+    if (!range) {
+      skippedRows.push(slice.row);
+      continue;
+    }
+    plannedSlices.push({
+      ...slice,
+      range
+    });
+  }
+
+  return {
+    slices: plannedSlices,
+    skippedRows
   };
 }
 
 export function buildAudioCueBatchFfmpegArgs(
   inputPath: string,
-  slices: Array<{ row: DraftingTranscriptRowInput; outputPath: string }>
+  slices: AudioCueBatchSlice[] | Array<{ row: DraftingTranscriptRowInput; outputPath: string }>
 ): string[] {
   const filterGraph = slices
-    .map(({ row }, index) => {
-      const range = getAudioSliceRange(row);
+    .map((slice, index) => {
+      const range = "range" in slice ? slice.range : getAudioSliceRange(slice.row);
+      if (!range) {
+        throw new Error(`audio_out_of_range:${slice.row.startSeconds}-${slice.row.endSeconds}`);
+      }
       return `${[
         `[0:a]atrim=start=${formatFfmpegSeconds(range.start)}:duration=${formatFfmpegSeconds(range.duration)}`,
         "asetpts=PTS-STARTPTS",
@@ -245,6 +299,9 @@ export async function sliceAudioTrackForRow({ track, row }: SliceAudioArgs): Pro
   const id = randomUUID();
   const { inputPath, outputPath } = buildAudioCueTempPaths(id, track.fileName);
   const range = getAudioSliceRange(row);
+  if (!range) {
+    throw new Error(`audio_out_of_range:${row.startSeconds}-${row.endSeconds}`);
+  }
 
   try {
     await writeFile(inputPath, Buffer.from(track.bytes));
@@ -272,6 +329,9 @@ export async function sliceAudioTrackForRow({ track, row }: SliceAudioArgs): Pro
       trackId: track.trackId,
       speakerKey: track.speakerKey,
       trackLabel: track.trackLabel,
+      clipStartSeconds: range.start,
+      clipEndSeconds: range.start + range.duration,
+      truncatedAtEnd: range.truncatedAtEnd,
       format: "wav",
       base64: wav.toString("base64")
     };
@@ -284,6 +344,24 @@ function appendMapValue<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const current = map.get(key) || [];
   current.push(value);
   map.set(key, current);
+}
+
+async function probeAudioDurationSeconds(inputPath: string): Promise<number | null> {
+  try {
+    const { stdout } = await execFileAsync("ffprobe", [
+      "-v",
+      "error",
+      "-show_entries",
+      "format=duration",
+      "-of",
+      "default=noprint_wrappers=1:nokey=1",
+      inputPath
+    ]);
+    const duration = Number(stdout.trim());
+    return Number.isFinite(duration) && duration > 0 ? duration : null;
+  } catch {
+    return null;
+  }
 }
 
 async function sliceAudioTrackForRows(
@@ -299,9 +377,14 @@ async function sliceAudioTrackForRows(
 
   try {
     await writeFile(inputPath, Buffer.from(track.bytes));
-    await execFileAsync("ffmpeg", buildAudioCueBatchFfmpegArgs(inputPath, slices));
+    const trackDurationSeconds = await probeAudioDurationSeconds(inputPath);
+    const plan = buildAudioCueBatchPlan(slices, trackDurationSeconds);
+    if (!plan.slices.length) {
+      return [];
+    }
+    await execFileAsync("ffmpeg", buildAudioCueBatchFfmpegArgs(inputPath, plan.slices));
     return await Promise.all(
-      slices.map(async ({ row, outputPath }) => {
+      plan.slices.map(async ({ row, outputPath, range }) => {
         const wav = await readFile(outputPath);
         return {
           rowId: row.rowId,
@@ -309,6 +392,9 @@ async function sliceAudioTrackForRows(
             trackId: track.trackId,
             speakerKey: track.speakerKey,
             trackLabel: track.trackLabel,
+            clipStartSeconds: range.start,
+            clipEndSeconds: range.start + range.duration,
+            truncatedAtEnd: range.truncatedAtEnd,
             format: "wav",
             base64: wav.toString("base64")
           }
@@ -346,8 +432,14 @@ export async function sliceAudioTracksForRows({ tasks }: SliceAudioBatchArgs): P
     Array.from(groups.values()).map(async ({ track, rows }) => {
       try {
         const clips = await sliceAudioTrackForRows(track, rows);
+        const clippedRowIds = new Set(clips.map(({ rowId }) => rowId));
         for (const { rowId, clip } of clips) {
           appendMapValue(clipsByRowId, rowId, clip);
+        }
+        for (const row of rows) {
+          if (!clippedRowIds.has(row.rowId)) {
+            appendMapValue(errorsByRowId, row.rowId, `audio_out_of_range:${row.startSeconds}-${row.endSeconds}`);
+          }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

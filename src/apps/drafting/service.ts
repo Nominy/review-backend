@@ -105,6 +105,12 @@ function audioWarning(error: unknown): string {
   return `audio_input_error:${message}`;
 }
 
+function appendAudioClipWarnings(audioWarnings: string[], audioClips: AudioCueClipInput[] | undefined): void {
+  if (audioClips?.some((clip) => clip.truncatedAtEnd)) {
+    audioWarnings.push("audio_truncated_at_end");
+  }
+}
+
 function appendMapValue<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const current = map.get(key) || [];
   current.push(value);
@@ -294,6 +300,7 @@ export async function generateDraft(
         if (batchedAudio) {
           audioWarnings.push(...(batchedAudio.errorsByRowId.get(currentRow.rowId) || []).map(audioWarning));
           audioClips = batchedAudio.clipsByRowId.get(currentRow.rowId);
+          appendAudioClipWarnings(audioWarnings, audioClips);
         } else {
           validateAudioTiming(currentRow);
           const selectedTracks = uniqueSelectedAudioTracks(audioTracks, currentRow);
@@ -314,6 +321,7 @@ export async function generateDraft(
               };
             })
           );
+          appendAudioClipWarnings(audioWarnings, audioClips);
         }
       } catch (error) {
         audioWarnings.push(audioWarning(error));

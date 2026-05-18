@@ -12,9 +12,24 @@ import type {
 
 type AnyElysia = Elysia<any, any, any, any, any, any, any>;
 const encoder = new TextEncoder();
+const DEFAULT_DRAFT_STREAM_KEEPALIVE_MS = 15_000;
 
 function toSseChunk(event: string, data: unknown): Uint8Array {
   return encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+}
+
+function toSseCommentChunk(comment: string): Uint8Array {
+  return encoder.encode(`: ${comment}\n\n`);
+}
+
+function parsePositiveIntegerEnv(name: string, defaultValue: number): number {
+  const raw = (process.env[name] || "").trim();
+  if (!raw) {
+    return defaultValue;
+  }
+
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : defaultValue;
 }
 
 function safeEnqueue(controller: ReadableStreamDefaultController<Uint8Array>, chunk: Uint8Array): boolean {
@@ -248,6 +263,13 @@ export function registerDraftingRoutes(app: AnyElysia): AnyElysia {
     }
 
     let streamOpen = true;
+    let keepalive: ReturnType<typeof setInterval> | undefined;
+    const stopKeepalive = (): void => {
+      if (keepalive) {
+        clearInterval(keepalive);
+        keepalive = undefined;
+      }
+    };
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         const send = (event: string, data: unknown): void => {
@@ -261,6 +283,14 @@ export function registerDraftingRoutes(app: AnyElysia): AnyElysia {
           jobId: request.jobId,
           totalRows: request.rows.length
         });
+
+        keepalive = setInterval(() => {
+          if (!streamOpen) {
+            stopKeepalive();
+            return;
+          }
+          streamOpen = safeEnqueue(controller, toSseCommentChunk("keepalive"));
+        }, parsePositiveIntegerEnv("DRAFT_STREAM_KEEPALIVE_MS", DEFAULT_DRAFT_STREAM_KEEPALIVE_MS));
 
         try {
           const response = await getOrStartDraftSession(request, () =>
@@ -304,11 +334,13 @@ export function registerDraftingRoutes(app: AnyElysia): AnyElysia {
             error: error instanceof Error ? error.message : String(error)
           });
         } finally {
+          stopKeepalive();
           streamOpen = false;
           safeClose(controller);
         }
       },
       cancel() {
+        stopKeepalive();
         streamOpen = false;
       }
     });

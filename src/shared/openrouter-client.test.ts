@@ -2,9 +2,15 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { requestOpenRouterChat } from "./openrouter-client";
 
 const originalFetch = globalThis.fetch;
+const originalChatTimeout = process.env.OPENROUTER_CHAT_TIMEOUT_MS;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  if (originalChatTimeout === undefined) {
+    delete process.env.OPENROUTER_CHAT_TIMEOUT_MS;
+  } else {
+    process.env.OPENROUTER_CHAT_TIMEOUT_MS = originalChatTimeout;
+  }
 });
 
 describe("requestOpenRouterChat", () => {
@@ -70,6 +76,61 @@ describe("requestOpenRouterChat", () => {
     });
 
     expect("service_tier" in postedBody).toBe(false);
+  });
+
+  it("aborts chat requests that exceed the configured timeout", async () => {
+    process.env.OPENROUTER_CHAT_TIMEOUT_MS = "5";
+
+    globalThis.fetch = ((_: string | URL | globalThis.Request, init?: RequestInit) => {
+      if (!init?.signal) {
+        return Promise.reject(new Error("missing abort signal"));
+      }
+
+      return new Promise<Response>((_resolve, reject) => {
+        init.signal!.addEventListener("abort", () => {
+          reject(new DOMException("Aborted", "AbortError"));
+        });
+      });
+    }) as unknown as typeof fetch;
+
+    await expect(
+      requestOpenRouterChat({
+        apiKey: "test-key",
+        model: "openai/test-model",
+        messages: [{ role: "user", content: "hello" }],
+        title: "test"
+      })
+    ).rejects.toThrow("OpenRouter request timed out after 5ms");
+  });
+
+  it("treats an empty assistant message as an upstream model error", async () => {
+    globalThis.fetch = ((_: string | URL | globalThis.Request, init?: RequestInit) => {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                finish_reason: "stop",
+                native_finish_reason: "MAX_TOKENS",
+                message: {
+                  content: ""
+                }
+              }
+            ]
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      );
+    }) as unknown as typeof fetch;
+
+    await expect(
+      requestOpenRouterChat({
+        apiKey: "test-key",
+        model: "openai/test-model",
+        messages: [{ role: "user", content: "hello" }],
+        title: "test"
+      })
+    ).rejects.toThrow("OpenRouter returned empty assistant content");
   });
 
   it("retries without reasoning when routing rejects reasoning parameters", async () => {

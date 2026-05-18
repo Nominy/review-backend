@@ -106,5 +106,10 @@ export async function rewriteRowWithModel(
     title: "Babel Gold Drafting"
   });
 
-  return parseResponseText(content);
+  const rewrittenText = parseResponseText(content);
+  if (!rewrittenText.trim()) {
+    throw new Error("empty_model_output");
+  }
+
+  return rewrittenText;
 }

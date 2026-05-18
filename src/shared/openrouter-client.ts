@@ -27,6 +27,7 @@ export type OpenRouterServiceTier = "default" | "flex" | "priority";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_CREDITS_URL = "https://openrouter.ai/api/v1/credits";
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
+const DEFAULT_OPENROUTER_CHAT_TIMEOUT_MS = 60_000;
 
 let cachedModelIds: Set<string> | null = null;
 let cachedModelIdsAt = 0;
@@ -52,6 +53,40 @@ function errorLooksProviderRoutingFailure(message: string): boolean {
   );
 }
 
+function parsePositiveIntegerEnv(name: string, defaultValue: number): number {
+  const raw = (process.env[name] || "").trim();
+  if (!raw) {
+    return defaultValue;
+  }
+
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : defaultValue;
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
+async function fetchOpenRouterChat(init: RequestInit): Promise<Response> {
+  const timeoutMs = parsePositiveIntegerEnv("OPENROUTER_CHAT_TIMEOUT_MS", DEFAULT_OPENROUTER_CHAT_TIMEOUT_MS);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(OPENROUTER_URL, {
+      ...init,
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (controller.signal.aborted || isAbortError(error)) {
+      throw new Error(`OpenRouter request timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function requestOpenRouterChatCore(args: {
   apiKey: string;
   model: string;
@@ -75,7 +110,7 @@ async function requestOpenRouterChatCore(args: {
     require_parameters: true
     });
 
-  const response = await fetch(OPENROUTER_URL, {
+  const response = await fetchOpenRouterChat({
     method: "POST",
     headers: {
       Authorization: `Bearer ${args.apiKey}`,
@@ -106,11 +141,18 @@ async function requestOpenRouterChatCore(args: {
     throw new Error("OpenRouter returned non-JSON payload.");
   }
 
-  return normalizeContent(
-    ((json.choices as Array<Record<string, unknown>> | undefined)?.[0]?.message as
-      | Record<string, unknown>
-      | undefined)?.content
-  );
+  const choice = (json.choices as Array<Record<string, unknown>> | undefined)?.[0];
+  const content = normalizeContent((choice?.message as Record<string, unknown> | undefined)?.content);
+  if (!content.trim()) {
+    const finishReason = typeof choice?.finish_reason === "string" ? choice.finish_reason : "";
+    const nativeFinishReason = typeof choice?.native_finish_reason === "string" ? choice.native_finish_reason : "";
+    const reasonText = [finishReason, nativeFinishReason].filter(Boolean).join("/");
+    throw new Error(
+      `OpenRouter returned empty assistant content${reasonText ? ` (${reasonText})` : ""}.`
+    );
+  }
+
+  return content;
 }
 
 export function parseMaybeJson(text: string): unknown | null {

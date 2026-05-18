@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { buildAudioCueBatchFfmpegArgs, buildAudioCueTempPaths, generateAudioCueDraft } from "./audio-cues";
+import {
+  buildAudioCueBatchFfmpegArgs,
+  buildAudioCueBatchPlan,
+  buildAudioCueTempPaths,
+  generateAudioCueDraft
+} from "./audio-cues";
 import type { AudioCueDraftRequest } from "./types";
 
 const baseRequest: AudioCueDraftRequest = {
@@ -74,6 +79,41 @@ describe("generateAudioCueDraft", () => {
     expect(args).toContain("row-1.wav");
     expect(args).toContain("row-2.wav");
     expect(args.filter((arg) => arg === "-map")).toHaveLength(2);
+  });
+
+  test("clamps tail row slices to the uploaded track duration", () => {
+    const plan = buildAudioCueBatchPlan(
+      [
+        {
+          row: {
+            ...baseRequest.rows[0]!,
+            rowId: "tail",
+            startSeconds: 149.47,
+            endSeconds: 161.82
+          },
+          outputPath: "tail.wav"
+        },
+        {
+          row: {
+            ...baseRequest.rows[0]!,
+            rowId: "past-end",
+            startSeconds: 151,
+            endSeconds: 162
+          },
+          outputPath: "past-end.wav"
+        }
+      ],
+      150
+    );
+    const args = buildAudioCueBatchFfmpegArgs("input.wav", plan.slices);
+    const filterGraph = args[args.indexOf("-filter_complex") + 1];
+
+    expect(plan.slices).toHaveLength(1);
+    expect(plan.slices[0]?.row.rowId).toBe("tail");
+    expect(plan.skippedRows.map((row) => row.rowId)).toEqual(["past-end"]);
+    expect(filterGraph).toContain("atrim=start=149.27:duration=0.73");
+    expect(args).toContain("tail.wav");
+    expect(args).not.toContain("past-end.wav");
   });
 
   test("passes row-length slices from every uploaded track into the audio rewrite request", async () => {
