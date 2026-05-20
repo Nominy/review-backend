@@ -1,8 +1,9 @@
-import type { OpenRouterServiceTier } from "../../shared/openrouter-client";
+import type { OpenRouterReasoningEffort, OpenRouterServiceTier } from "../../shared/openrouter-client";
 
-export type { OpenRouterServiceTier };
+export type { OpenRouterReasoningEffort, OpenRouterServiceTier };
 
 export type DraftingProjectPresetId = "ru-gold-2sp-v1";
+export type DraftReasoningEffort = "default" | OpenRouterReasoningEffort;
 
 export interface DraftingTranscriptRowInput {
   rowId: string;
@@ -21,6 +22,7 @@ export interface GenerateDraftRequest {
   openRouterApiKey?: string;
   model?: string;
   serviceTier?: OpenRouterServiceTier;
+  reasoningEffort?: DraftReasoningEffort;
 }
 
 export interface AudioCueAudioTrackInput {
@@ -124,5 +126,6 @@ export interface RewriteRowDeps {
   preset: LoadedProjectPreset;
   model: string;
   serviceTier?: OpenRouterServiceTier;
+  reasoningEffort?: OpenRouterReasoningEffort;
   testMode: boolean;
 }

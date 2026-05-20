@@ -20,6 +20,7 @@ import type {
   DraftSummary,
   GenerateDraftRequest,
   GenerateDraftResponse,
+  OpenRouterReasoningEffort,
   OpenRouterServiceTier,
   RowRewriteContext
 } from "./types";
@@ -141,6 +142,21 @@ function normalizeServiceTier(value: GenerateDraftRequest["serviceTier"]): OpenR
   return value === "default" || value === "priority" || value === "flex" ? value : "flex";
 }
 
+function normalizeReasoningEffort(value: GenerateDraftRequest["reasoningEffort"]): OpenRouterReasoningEffort | undefined {
+  if (value === "default") {
+    return undefined;
+  }
+
+  return value === "none" ||
+    value === "minimal" ||
+    value === "low" ||
+    value === "medium" ||
+    value === "high" ||
+    value === "xhigh"
+    ? value
+    : "low";
+}
+
 function uniqueSelectedAudioTracks(
   audioTracks: AudioCueAudioTrackInput[],
   row: GenerateDraftRequest["rows"][number]
@@ -246,6 +262,7 @@ export async function generateDraft(
   const requestedApiKey = typeof request.openRouterApiKey === "string" ? request.openRouterApiKey.trim() : "";
   const apiKey = deps.apiKey ?? requestedApiKey;
   const serviceTier = normalizeServiceTier(request.serviceTier);
+  const reasoningEffort = normalizeReasoningEffort(request.reasoningEffort);
 
   if (!deps.rewriteRow && !testMode && !apiKey) {
     throw new Error("openRouterApiKey is required.");
@@ -280,6 +297,7 @@ export async function generateDraft(
         apiKey,
         model,
         preset,
+        reasoningEffort,
         serviceTier,
         systemPrompt,
         testMode

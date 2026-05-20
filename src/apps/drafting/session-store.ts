@@ -36,6 +36,8 @@ function getDraftSessionFingerprint(request: GenerateDraftRequest): string {
     projectPreset: request.projectPreset,
     jobId: request.jobId,
     model: typeof request.model === "string" ? request.model.trim() : "",
+    serviceTier: typeof request.serviceTier === "string" ? request.serviceTier.trim() : "",
+    reasoningEffort: typeof request.reasoningEffort === "string" ? request.reasoningEffort.trim() : "",
     rows: request.rows.map(normalizeRowForFingerprint)
   });
 }

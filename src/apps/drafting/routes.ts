@@ -13,6 +13,7 @@ import type {
 type AnyElysia = Elysia<any, any, any, any, any, any, any>;
 const encoder = new TextEncoder();
 const DEFAULT_DRAFT_STREAM_KEEPALIVE_MS = 15_000;
+const SUPPORTED_REASONING_EFFORTS = new Set(["default", "none", "minimal", "low", "medium", "high", "xhigh"]);
 
 function toSseChunk(event: string, data: unknown): Uint8Array {
   return encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -93,6 +94,15 @@ function assertGenerateDraftBody(body: unknown): asserts body is GenerateDraftRe
     body.serviceTier !== "priority"
   ) {
     throw new Error("serviceTier must be default, flex, or priority when provided.");
+  }
+
+  if (
+    "reasoningEffort" in body &&
+    body.reasoningEffort !== undefined &&
+    body.reasoningEffort !== null &&
+    (typeof body.reasoningEffort !== "string" || !SUPPORTED_REASONING_EFFORTS.has(body.reasoningEffort))
+  ) {
+    throw new Error("reasoningEffort must be default, none, minimal, low, medium, high, or xhigh when provided.");
   }
 
   if (

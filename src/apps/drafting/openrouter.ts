@@ -100,7 +100,7 @@ export async function rewriteRowWithModel(
       { role: "user", content: buildUserContent(context) }
     ],
     providerSort: "latency",
-    reasoningEffort: "low",
+    reasoningEffort: deps.reasoningEffort,
     serviceTier: deps.serviceTier,
     temperature: 0.15,
     title: "Babel Gold Drafting"

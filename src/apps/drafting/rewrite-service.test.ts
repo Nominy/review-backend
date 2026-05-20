@@ -395,6 +395,61 @@ describe("generateDraft", () => {
     expect("service_tier" in postedBody).toBe(false);
   });
 
+  test("passes selected reasoning effort into normal model requests", async () => {
+    let postedBody: any = null;
+    globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      postedBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ choices: [{ message: { content: "Privet." } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }) as unknown as typeof fetch;
+
+    await generateDraft(
+      {
+        ...baseRequest,
+        rows: [baseRequest.rows[0]!],
+        model: "google/gemini-3-flash-preview",
+        reasoningEffort: "high"
+      },
+      {
+        testMode: false,
+        validateModel: async () => {}
+      }
+    );
+
+    expect(postedBody.reasoning).toEqual({
+      effort: "high",
+      exclude: true
+    });
+  });
+
+  test("omits reasoning parameters when provider default reasoning is selected", async () => {
+    let postedBody: any = null;
+    globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      postedBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ choices: [{ message: { content: "Privet." } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }) as unknown as typeof fetch;
+
+    await generateDraft(
+      {
+        ...baseRequest,
+        rows: [baseRequest.rows[0]!],
+        model: "google/gemini-3-flash-preview",
+        reasoningEffort: "default"
+      },
+      {
+        testMode: false,
+        validateModel: async () => {}
+      }
+    );
+
+    expect("reasoning" in postedBody).toBe(false);
+  });
+
   test("passes matching speaker-lane audio clips into the normal row rewrite context", async () => {
     const audioTracks: AudioCueAudioTrackInput[] = [
       {

@@ -74,6 +74,56 @@ describe("createApp", () => {
     expect(payload.error).toContain("projectPreset");
   });
 
+  it("rejects unsupported drafting reasoning effort values", async () => {
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const target = String(url);
+      if (target.includes("/api/v1/models")) {
+        return new Response(
+          JSON.stringify({
+            data: [{ id: "google/gemini-3-flash-preview", architecture: { input_modalities: ["text", "audio"] } }]
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          }
+        );
+      }
+
+      return new Response(JSON.stringify({ choices: [{ message: { content: "Privet." } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }) as unknown as typeof fetch;
+
+    const response = await createApp().handle(
+      new Request("http://localhost/api/draft/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectPreset: "ru-gold-2sp-v1",
+          jobId: "job-1",
+          rows: [
+            {
+              rowId: "r1",
+              speakerKey: "speaker-1",
+              startSeconds: 0,
+              endSeconds: 1,
+              text: "privet",
+              index: 0
+            }
+          ],
+          openRouterApiKey: "sk-or-test",
+          model: "google/gemini-3-flash-preview",
+          reasoningEffort: "auto"
+        })
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toContain("reasoningEffort must be default, none, minimal, low, medium, high, or xhigh");
+  });
+
   it("parses optional audio cue multipart payload on the default drafting stream route", async () => {
     const form = new FormData();
     form.set(
