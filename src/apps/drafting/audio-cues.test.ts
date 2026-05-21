@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
   buildAudioCueBatchFfmpegArgs,
   buildAudioCueBatchPlan,
@@ -6,6 +6,12 @@ import {
   generateAudioCueDraft
 } from "./audio-cues";
 import type { AudioCueDraftRequest } from "./types";
+
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
 
 const baseRequest: AudioCueDraftRequest = {
   projectPreset: "ru-gold-2sp-v1",
@@ -207,6 +213,43 @@ describe("generateAudioCueDraft", () => {
     expect(seenSlices).toEqual(["track-2:recording-b:Speaker 2:Speaker 2"]);
     expect(seenClips).toEqual([["track-2:recording-b:Speaker 2"]]);
     expect(response.draftRows[0]?.status).toBe("unchanged");
+  });
+
+  test("caches the stable audio cue tag system before dynamic row audio data", async () => {
+    let postedBody: any = null;
+    globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      postedBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ choices: [{ message: { content: "{\"rewrittenText\":\"РџСЂРёРІРµС‚\"}" } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }) as unknown as typeof fetch;
+
+    await generateAudioCueDraft(baseRequest, {
+      validateAudioModel: async () => {},
+      sliceAudio: async ({ track }) => ({
+        trackId: track.trackId,
+        format: "wav",
+        base64: Buffer.from(track.trackId).toString("base64")
+      })
+    });
+
+    expect(postedBody.messages[0].role).toBe("system");
+    expect(postedBody.messages[0].content).toEqual([
+      expect.objectContaining({
+        type: "text",
+        cache_control: { type: "ephemeral" }
+      })
+    ]);
+    expect(postedBody.messages[0].content[0].text).toContain("Tag system:");
+    expect(postedBody.messages[0].content[0].text).not.toContain("Human row text");
+    expect(postedBody.messages[0].content[0].text).not.toContain("track-1");
+
+    const userContent = postedBody.messages[1].content as Array<Record<string, any>>;
+    expect(userContent[0].text).toContain("Human row text");
+    expect(userContent[0].text).toContain("track-1");
+    expect(JSON.stringify(userContent)).not.toContain("cache_control");
+    expect(userContent.some((part) => part.type === "input_audio")).toBe(true);
   });
 
   test("rejects the request before slicing when the selected model has no audio input", async () => {

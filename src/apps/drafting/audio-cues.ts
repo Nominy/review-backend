@@ -5,7 +5,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
-import { assertOpenRouterModelSupportsAudio, requestOpenRouterChat } from "../../shared/openrouter-client";
+import {
+  assertOpenRouterModelSupportsAudio,
+  buildCachedOpenRouterTextContent,
+  requestOpenRouterChat,
+  shouldUseGeminiPromptCaching
+} from "../../shared/openrouter-client";
 import { parseResponseText } from "./openrouter";
 import type {
   AudioCueAudioTrackInput,
@@ -492,7 +497,7 @@ export function selectAudioTracksForRow(
   return mappedTracks.filter((track) => trackSpeakerKeys(track).has(rowSpeaker));
 }
 
-function buildAudioCuePrompt(context: AudioCueRewriteContext): string {
+function buildAudioCueSystemPrompt(tagSystem: string): string {
   return [
     "You add audible-cue tags to one human-written Russian transcript row.",
     "The row text is the source of truth. Do not delete, replace, reorder, translate, or paraphrase any words.",
@@ -501,25 +506,37 @@ function buildAudioCuePrompt(context: AudioCueRewriteContext): string {
     "If there is no clear useful audio cue, return the original row text unchanged.",
     "Return JSON only, with this shape: {\"rewrittenText\":\"...\"}",
     "",
+    "Tag system:",
+    tagSystem
+  ].join("\n");
+}
+
+function buildAudioCueUserPrompt(context: AudioCueRewriteContext): string {
+  return [
     `Row ${context.currentRow.index + 1}`,
     `Speaker key: ${context.currentRow.speakerKey}`,
     `Time range: ${context.currentRow.startSeconds ?? "unknown"}-${context.currentRow.endSeconds ?? "unknown"}s`,
     `Human row text: ${JSON.stringify(context.currentRow.text)}`,
     `Audio clips: ${context.audioClips
       .map((clip) => `${clip.trackId}${clip.speakerKey ? ` speaker=${clip.speakerKey}` : ""}${clip.trackLabel ? ` label=${clip.trackLabel}` : ""}`)
-      .join(", ")}`,
-    "",
-    "Tag system:",
-    context.tagSystem
+      .join(", ")}`
   ].join("\n");
+}
+
+function buildAudioCuePrompt(context: AudioCueRewriteContext): string {
+  return [buildAudioCueSystemPrompt(context.tagSystem), "", buildAudioCueUserPrompt(context)].join("\n");
 }
 
 async function defaultRewriteRowWithAudio(
   context: AudioCueRewriteContext,
   options: { apiKey: string; model: string; serviceTier: AudioCueDraftRequest["serviceTier"] }
 ): Promise<string> {
+  const useGeminiPromptCaching = shouldUseGeminiPromptCaching(options.model);
   const content = [
-    { type: "text" as const, text: buildAudioCuePrompt(context) },
+    {
+      type: "text" as const,
+      text: useGeminiPromptCaching ? buildAudioCueUserPrompt(context) : buildAudioCuePrompt(context)
+    },
     ...context.audioClips.flatMap((clip, index) => [
       {
         type: "text" as const,
@@ -540,7 +557,12 @@ async function defaultRewriteRowWithAudio(
   const response = await requestOpenRouterChat({
     apiKey: options.apiKey,
     model: options.model,
-    messages: [{ role: "user", content }],
+    messages: useGeminiPromptCaching
+      ? [
+        { role: "system", content: [buildCachedOpenRouterTextContent(buildAudioCueSystemPrompt(context.tagSystem))] },
+        { role: "user", content }
+      ]
+      : [{ role: "user", content }],
     serviceTier: options.serviceTier,
     temperature: 0,
     title: "Babel Audio Cues"

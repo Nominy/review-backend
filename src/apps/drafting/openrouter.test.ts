@@ -91,6 +91,125 @@ describe("rewriteRowWithModel", () => {
     expect(userContent[0].type).toBe("text");
   });
 
+  test("marks the stable system prompt as a Gemini prompt-cache breakpoint", async () => {
+    let postedBody: any = null;
+    globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      postedBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ choices: [{ message: { content: "Privet." } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }) as unknown as typeof fetch;
+
+    await rewriteRowWithModel(
+      {
+        currentRow: {
+          rowId: "r1",
+          speakerKey: "Speaker 1",
+          startSeconds: 1,
+          endSeconds: 2,
+          text: "privet",
+          index: 0
+        }
+      },
+      {
+        ...deps,
+        systemPrompt: "stable drafting rules"
+      }
+    );
+
+    expect(postedBody.messages[0].content).toEqual([
+      {
+        type: "text",
+        text: "stable drafting rules",
+        cache_control: { type: "ephemeral" }
+      }
+    ]);
+    expect(typeof postedBody.messages[1].content).toBe("string");
+    expect(JSON.stringify(postedBody.messages[1].content)).not.toContain("cache_control");
+  });
+
+  test("does not add Gemini cache-control blocks to other model families", async () => {
+    let postedBody: any = null;
+    globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      postedBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ choices: [{ message: { content: "Privet." } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }) as unknown as typeof fetch;
+
+    await rewriteRowWithModel(
+      {
+        currentRow: {
+          rowId: "r1",
+          speakerKey: "Speaker 1",
+          startSeconds: 1,
+          endSeconds: 2,
+          text: "privet",
+          index: 0
+        }
+      },
+      {
+        ...deps,
+        model: "openai/test-model",
+        systemPrompt: "stable drafting rules"
+      }
+    );
+
+    expect(postedBody.messages[0].content).toBe("stable drafting rules");
+    expect(JSON.stringify(postedBody.messages)).not.toContain("cache_control");
+  });
+
+  test("keeps dynamic audio row data after the cached Gemini prompt prefix", async () => {
+    let postedBody: any = null;
+    globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      postedBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ choices: [{ message: { content: "Privet." } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }) as unknown as typeof fetch;
+
+    await rewriteRowWithModel(
+      {
+        currentRow: {
+          rowId: "r1",
+          speakerKey: "Speaker 1",
+          startSeconds: 1,
+          endSeconds: 2,
+          text: "privet",
+          index: 0
+        },
+        tagSystem: "[smekh]\n[kashel]",
+        audioClips: [
+          {
+            trackId: "lane-1",
+            speakerKey: "speaker-1",
+            trackLabel: "Speaker 1",
+            format: "wav",
+            base64: "AAAA"
+          }
+        ]
+      },
+      deps
+    );
+
+    const userContent = postedBody.messages[1].content as Array<Record<string, any>>;
+    const cachedTextParts = userContent.filter((part) => part.cache_control);
+
+    expect(cachedTextParts).toHaveLength(1);
+    expect(cachedTextParts[0]).toMatchObject({
+      type: "text",
+      cache_control: { type: "ephemeral" }
+    });
+    expect(cachedTextParts[0].text).toContain("[smekh]");
+    expect(cachedTextParts[0].text).not.toContain("privet");
+    expect(cachedTextParts[0].text).not.toContain("trackId=lane-1");
+    expect(userContent.some((part) => part.type === "input_audio")).toBe(true);
+    expect(JSON.stringify(userContent.at(-1))).not.toContain("cache_control");
+  });
+
   test("passes the selected service tier into OpenRouter requests", async () => {
     let postedBody: any = null;
     globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {

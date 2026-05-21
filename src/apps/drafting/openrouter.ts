@@ -1,4 +1,9 @@
-import { requestOpenRouterChat, type OpenRouterContentPart } from "../../shared/openrouter-client";
+import {
+  buildCachedOpenRouterTextContent,
+  requestOpenRouterChat,
+  shouldUseGeminiPromptCaching,
+  type OpenRouterContentPart
+} from "../../shared/openrouter-client";
 import type { RowRewriteContext, RewriteRowDeps } from "./types";
 import { buildUserPrompt } from "./prompt";
 
@@ -46,30 +51,69 @@ export function parseResponseText(content: string): string {
   }
 }
 
-function buildUserContent(context: RowRewriteContext): string | OpenRouterContentPart[] {
+function audioClipPromptLine(clip: NonNullable<RowRewriteContext["audioClips"]>[number], index: number): string {
+  return `${index + 1}. trackId=${clip.trackId}${clip.speakerKey ? ` speakerKey=${clip.speakerKey}` : ""}${
+    clip.trackLabel ? ` trackLabel=${clip.trackLabel}` : ""
+  }`;
+}
+
+function buildDynamicAudioPrompt(context: RowRewriteContext, fullPromptLines: string[]): string {
+  const currentRowText = JSON.stringify(context.currentRow.text);
+  const currentRowLine = fullPromptLines.find((line) => line.includes(currentRowText)) || `Current row: ${currentRowText}`;
+  return [
+    "Audio clips:",
+    ...(context.audioClips || []).map(audioClipPromptLine),
+    currentRowLine
+  ].join("\n");
+}
+
+function buildCachedAudioPromptPrefix(context: RowRewriteContext, fullPromptLines: string[]): string {
+  const currentRowText = JSON.stringify(context.currentRow.text);
+  const dynamicClipLines = new Set((context.audioClips || []).map(audioClipPromptLine));
+  return fullPromptLines
+    .filter((line) => line !== "Audio clips:")
+    .filter((line) => !dynamicClipLines.has(line))
+    .filter((line) => !line.includes(currentRowText))
+    .join("\n");
+}
+
+function buildAudioAttachments(context: RowRewriteContext): OpenRouterContentPart[] {
+  return (context.audioClips || []).flatMap((clip, index) => [
+    {
+      type: "text" as const,
+      text: `Audio clip ${index + 1}: trackId=${clip.trackId}${
+        clip.speakerKey ? `, speakerKey=${clip.speakerKey}` : ""
+      }${clip.trackLabel ? `, trackLabel=${clip.trackLabel}` : ""}.`
+    },
+    {
+      type: "input_audio" as const,
+      input_audio: {
+        data: clip.base64,
+        format: clip.format
+      }
+    }
+  ]);
+}
+
+function buildUserContent(context: RowRewriteContext, model: string): string | OpenRouterContentPart[] {
   const userPrompt = buildUserPrompt(context);
   if (!context.audioClips?.length) {
     return userPrompt;
   }
+  if (!shouldUseGeminiPromptCaching(model)) {
+    return [{ type: "text", text: userPrompt }, ...buildAudioAttachments(context)];
+  }
+  const userPromptLines = userPrompt.split("\n");
 
   return [
-    { type: "text", text: userPrompt },
-    ...context.audioClips.flatMap((clip, index) => [
-      {
-        type: "text" as const,
-        text: `Audio clip ${index + 1}: trackId=${clip.trackId}${
-          clip.speakerKey ? `, speakerKey=${clip.speakerKey}` : ""
-        }${clip.trackLabel ? `, trackLabel=${clip.trackLabel}` : ""}.`
-      },
-      {
-        type: "input_audio" as const,
-        input_audio: {
-          data: clip.base64,
-          format: clip.format
-        }
-      }
-    ])
+    buildCachedOpenRouterTextContent(buildCachedAudioPromptPrefix(context, userPromptLines)),
+    { type: "text", text: buildDynamicAudioPrompt(context, userPromptLines) },
+    ...buildAudioAttachments(context)
   ];
+}
+
+function buildSystemContent(systemPrompt: string, model: string): string | OpenRouterContentPart[] {
+  return shouldUseGeminiPromptCaching(model) ? [buildCachedOpenRouterTextContent(systemPrompt)] : systemPrompt;
 }
 
 function deterministicRewrite(text: string): string {
@@ -96,8 +140,8 @@ export async function rewriteRowWithModel(
     apiKey: deps.apiKey,
     model: deps.model,
     messages: [
-      { role: "system", content: deps.systemPrompt },
-      { role: "user", content: buildUserContent(context) }
+      { role: "system", content: buildSystemContent(deps.systemPrompt, deps.model) },
+      { role: "user", content: buildUserContent(context, deps.model) }
     ],
     providerSort: "latency",
     reasoningEffort: deps.reasoningEffort,

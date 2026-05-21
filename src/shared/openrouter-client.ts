@@ -1,8 +1,14 @@
 import { isObject, toFiniteNumber } from "./http";
 
+export type OpenRouterCacheControl = {
+  type: "ephemeral";
+  ttl?: "1h";
+};
+
 export type OpenRouterTextContentPart = {
   type: "text";
   text: string;
+  cache_control?: OpenRouterCacheControl;
 };
 
 export type OpenRouterAudioContentPart = {
@@ -23,6 +29,18 @@ export type OpenRouterMessage = {
 export type OpenRouterReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 export type OpenRouterProviderSort = "price" | "throughput" | "latency";
 export type OpenRouterServiceTier = "default" | "flex" | "priority";
+
+export function buildCachedOpenRouterTextContent(text: string): OpenRouterTextContentPart {
+  return {
+    type: "text",
+    text,
+    cache_control: { type: "ephemeral" }
+  };
+}
+
+export function shouldUseGeminiPromptCaching(model: string): boolean {
+  return model.trim().toLowerCase().startsWith("google/gemini");
+}
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_CREDITS_URL = "https://openrouter.ai/api/v1/credits";
