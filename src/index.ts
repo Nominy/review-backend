@@ -2,7 +2,11 @@ import { createApp } from "./app";
 import { config } from "./config";
 const app = createApp();
 
-app.listen({ hostname: config.host, port: config.port });
+app.listen({
+  hostname: config.host,
+  port: config.port,
+  maxRequestBodySize: config.maxRequestBodySize
+});
 
 console.log(`[babel-review-backend] listening on ${config.publicBaseUrl} (bind ${config.host}:${config.port})`);
 console.log(

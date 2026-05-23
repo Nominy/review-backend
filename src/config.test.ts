@@ -8,6 +8,7 @@ const CONFIG_ENV_KEYS = [
   "PORT",
   "PUBLIC_BASE_URL",
   "CORS_ALLOWED_ORIGINS",
+  "DRAFT_MAX_REQUEST_BODY_MB",
   "ANALYTICS_LOG_PATH",
   "REVIEW_SESSIONS_DIR",
   "PENDING_TEMPLATE_PROPOSAL_PATH",
@@ -93,5 +94,25 @@ describe("config", () => {
     const { config } = await importFreshConfig();
 
     expect(config.openRouterModel).toBe("google/gemini-3-flash-preview");
+  });
+
+  it("uses an explicit larger request body cap for audio drafting uploads", async () => {
+    process.env.OPENROUTER_TEST_MODE = "true";
+    process.env.OPENROUTER_API_KEY = "";
+    delete process.env.DRAFT_MAX_REQUEST_BODY_MB;
+
+    const { config } = await importFreshConfig();
+
+    expect(config.maxRequestBodySize).toBe(512 * 1024 * 1024);
+  });
+
+  it("allows the audio drafting request body cap to be overridden in megabytes", async () => {
+    process.env.OPENROUTER_TEST_MODE = "true";
+    process.env.OPENROUTER_API_KEY = "";
+    process.env.DRAFT_MAX_REQUEST_BODY_MB = "768";
+
+    const { config } = await importFreshConfig();
+
+    expect(config.maxRequestBodySize).toBe(768 * 1024 * 1024);
   });
 });
