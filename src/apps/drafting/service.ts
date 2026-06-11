@@ -157,22 +157,40 @@ function normalizeReasoningEffort(value: GenerateDraftRequest["reasoningEffort"]
     : "low";
 }
 
+function normalizeTrackDedupeKey(value: string | undefined): string {
+  const text = typeof value === "string" ? value.trim().toLocaleLowerCase() : "";
+  if (!text) {
+    return "";
+  }
+
+  const speakerMatch = text.match(/\b(?:speaker|spk|sp)\s*[-_ ]?\s*(\d+)\b/u);
+  if (speakerMatch) {
+    return `speaker-${speakerMatch[1]}`;
+  }
+
+  return text.replace(/[^\p{L}0-9]+/giu, "-").replace(/^-+|-+$/gu, "");
+}
+
 function uniqueSelectedAudioTracks(
   audioTracks: AudioCueAudioTrackInput[],
   row: GenerateDraftRequest["rows"][number]
 ): AudioCueAudioTrackInput[] {
   const selectedTracks = selectAudioTracksForRow(audioTracks, row);
-  const seenTrackIds = new Set<string>();
+  const seenTrackKeys = new Set<string>();
 
   return selectedTracks.filter((track) => {
-    const trackId = track.trackId.trim();
-    if (!trackId) {
+    const trackKey =
+      normalizeTrackDedupeKey(track.speakerKey) ||
+      normalizeTrackDedupeKey(track.trackLabel) ||
+      normalizeTrackDedupeKey(track.trackId) ||
+      track.trackId.trim();
+    if (!trackKey) {
       return true;
     }
-    if (seenTrackIds.has(trackId)) {
+    if (seenTrackKeys.has(trackKey)) {
       return false;
     }
-    seenTrackIds.add(trackId);
+    seenTrackKeys.add(trackKey);
     return true;
   });
 }

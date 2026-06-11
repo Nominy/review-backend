@@ -644,4 +644,66 @@ describe("generateDraft", () => {
     expect(batchCalls).toEqual([["r1:lane-1:lane-1.wav"]]);
     expect(seenContexts[0]?.audioClips?.map((clip) => clip.trackId)).toEqual(["lane-1"]);
   });
+
+  test("deduplicates captured lanes by speaker key when track ids differ", async () => {
+    const audioTracks: AudioCueAudioTrackInput[] = [
+      {
+        trackId: "source-track-id",
+        speakerKey: "lane-a",
+        trackLabel: "Speaker 1",
+        fileName: "lane-source.wav",
+        mimeType: "audio/wav",
+        bytes: new Uint8Array([1, 2, 3])
+      },
+      {
+        trackId: "blob-track-id",
+        speakerKey: "lane-a",
+        trackLabel: "Speaker 1",
+        fileName: "lane-blob.wav",
+        mimeType: "audio/wav",
+        bytes: new Uint8Array([4, 5, 6])
+      }
+    ];
+    const batchCalls: string[][] = [];
+    const seenContexts: RowRewriteContext[] = [];
+
+    await generateDraft(
+      {
+        ...baseRequest,
+        rows: [{ ...baseRequest.rows[0]!, speakerKey: "Speaker 1" }],
+        model: "google/gemini-3-flash-preview"
+      },
+      {
+        audioTracks,
+        validateAudioModel: async () => {},
+        sliceAudioBatch: async ({ tasks }) => {
+          batchCalls.push(tasks.map((task) => `${task.row.rowId}:${task.track.trackId}:${task.track.fileName}`));
+          return {
+            clipsByRowId: new Map([
+              [
+                "r1",
+                [
+                  {
+                    trackId: tasks[0]!.track.trackId,
+                    speakerKey: tasks[0]!.track.speakerKey,
+                    trackLabel: tasks[0]!.track.trackLabel,
+                    format: "wav",
+                    base64: Buffer.from("r1:lane-a").toString("base64")
+                  }
+                ]
+              ]
+            ]),
+            errorsByRowId: new Map()
+          };
+        },
+        rewriteRow: async (context: RowRewriteContext) => {
+          seenContexts.push(context);
+          return `${context.currentRow.text}.`;
+        }
+      }
+    );
+
+    expect(batchCalls).toEqual([["r1:source-track-id:lane-source.wav"]]);
+    expect(seenContexts[0]?.audioClips?.map((clip) => clip.trackId)).toEqual(["source-track-id"]);
+  });
 });
