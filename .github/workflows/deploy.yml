@@ -34,6 +34,8 @@ jobs:
         run: bun run typecheck
 
       - name: Test
+        env:
+          OPENROUTER_TEST_MODE: "false"
         run: bun run test
 
       - name: Validate deployment secrets
