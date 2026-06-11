@@ -215,7 +215,7 @@ describe("generateDraft", () => {
     expect(maxActiveRows).toBe(5);
   });
 
-  test("caps default row concurrency for audio-backed drafts", async () => {
+  test("does not cap default row concurrency for audio-backed drafts", async () => {
     const previousEnvConcurrency = process.env.DRAFT_ROW_CONCURRENCY;
     delete process.env.DRAFT_ROW_CONCURRENCY;
 
@@ -284,7 +284,7 @@ describe("generateDraft", () => {
       }
     }
 
-    expect(maxActiveRows).toBeLessThanOrEqual(4);
+    expect(maxActiveRows).toBe(6);
   });
 
   test("retries a failed row call once before succeeding", async () => {

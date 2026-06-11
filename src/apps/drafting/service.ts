@@ -47,8 +47,6 @@ type GenerateDraftDeps = {
   }) => void | Promise<void>;
 };
 
-const DEFAULT_AUDIO_ROW_CONCURRENCY = 4;
-
 function summarizeDraftRows(draftRows: DraftRowResult[]): DraftSummary {
   const anomalyCounts: Record<string, number> = {};
   let rewrittenRows = 0;
@@ -324,10 +322,7 @@ export async function generateDraft(
       }));
   const maxAttemptsPerRow = Math.max(1, deps.maxAttemptsPerRow ?? 2);
   const envRowConcurrency = process.env.DRAFT_ROW_CONCURRENCY ? Number(process.env.DRAFT_ROW_CONCURRENCY) : undefined;
-  const defaultRowConcurrency = shouldUseAudio
-    ? Math.min(DEFAULT_AUDIO_ROW_CONCURRENCY, request.rows.length)
-    : request.rows.length;
-  const rowConcurrency = normalizeConcurrency(deps.rowConcurrency ?? envRowConcurrency, defaultRowConcurrency);
+  const rowConcurrency = normalizeConcurrency(deps.rowConcurrency ?? envRowConcurrency, request.rows.length);
 
   const draftRows: Array<DraftRowResult | undefined> = new Array(request.rows.length);
   let completedRowCount = 0;
