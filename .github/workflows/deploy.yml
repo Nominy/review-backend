@@ -34,7 +34,7 @@ jobs:
         run: bun run typecheck
 
       - name: Test
-        run: bun test
+        run: bun run test
 
       - name: Validate deployment secrets
         shell: bash

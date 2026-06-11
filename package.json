@@ -8,7 +8,7 @@
     "dev": "bun --no-env-file --watch src/index.ts",
     "start": "bun --no-env-file src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
+    "test": "bun test --max-concurrency=1",
     "eval:smoke": "bun --no-env-file src/run-smoke-eval.ts",
     "pm2:start": "pm2 start ecosystem.config.cjs",
     "pm2:restart": "pm2 restart ecosystem.config.cjs --update-env",
