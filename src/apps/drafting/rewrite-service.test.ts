@@ -215,6 +215,78 @@ describe("generateDraft", () => {
     expect(maxActiveRows).toBe(5);
   });
 
+  test("caps default row concurrency for audio-backed drafts", async () => {
+    const previousEnvConcurrency = process.env.DRAFT_ROW_CONCURRENCY;
+    delete process.env.DRAFT_ROW_CONCURRENCY;
+
+    let activeRows = 0;
+    let maxActiveRows = 0;
+    const rows = Array.from({ length: 6 }, (_, index) => ({
+      rowId: `r${index + 1}`,
+      speakerKey: "Speaker 1",
+      startSeconds: index,
+      endSeconds: index + 1,
+      text: `row ${index + 1}`,
+      index
+    }));
+    const audioTracks: AudioCueAudioTrackInput[] = [
+      {
+        trackId: "lane-1",
+        speakerKey: "lane-a",
+        trackLabel: "Speaker 1",
+        fileName: "lane-1.wav",
+        mimeType: "audio/wav",
+        bytes: new Uint8Array([1, 2, 3])
+      }
+    ];
+
+    try {
+      await generateDraft(
+        {
+          ...baseRequest,
+          rows,
+          model: "google/gemini-3-flash-preview"
+        },
+        {
+          audioTracks,
+          validateAudioModel: async () => {},
+          sliceAudioBatch: async ({ tasks }) => ({
+            clipsByRowId: new Map(
+              tasks.map((task) => [
+                task.row.rowId,
+                [
+                  {
+                    trackId: task.track.trackId,
+                    speakerKey: task.track.speakerKey,
+                    trackLabel: task.track.trackLabel,
+                    format: "wav",
+                    base64: Buffer.from(`${task.row.rowId}:${task.track.trackId}`).toString("base64")
+                  }
+                ]
+              ])
+            ),
+            errorsByRowId: new Map()
+          }),
+          rewriteRow: async (context: RowRewriteContext) => {
+            activeRows += 1;
+            maxActiveRows = Math.max(maxActiveRows, activeRows);
+            await delay(10);
+            activeRows -= 1;
+            return `${context.currentRow.text}.`;
+          }
+        }
+      );
+    } finally {
+      if (previousEnvConcurrency === undefined) {
+        delete process.env.DRAFT_ROW_CONCURRENCY;
+      } else {
+        process.env.DRAFT_ROW_CONCURRENCY = previousEnvConcurrency;
+      }
+    }
+
+    expect(maxActiveRows).toBeLessThanOrEqual(4);
+  });
+
   test("retries a failed row call once before succeeding", async () => {
     const attempts = new Map<string, number>();
 

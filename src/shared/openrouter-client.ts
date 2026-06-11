@@ -85,6 +85,22 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
+function formatOpenRouterErrorPayload(json: Record<string, unknown>): string | null {
+  if (!isObject(json.error)) {
+    return null;
+  }
+
+  const message = typeof json.error.message === "string" ? json.error.message.trim() : "";
+  const code = json.error.code;
+  const codeText = typeof code === "string" || typeof code === "number" ? String(code).trim() : "";
+
+  if (!message && !codeText) {
+    return "OpenRouter returned an error payload.";
+  }
+
+  return `OpenRouter error${codeText ? ` ${codeText}` : ""}${message ? `: ${message}` : ""}`;
+}
+
 async function fetchOpenRouterChat(init: RequestInit): Promise<Response> {
   const timeoutMs = parsePositiveIntegerEnv("OPENROUTER_CHAT_TIMEOUT_MS", DEFAULT_OPENROUTER_CHAT_TIMEOUT_MS);
   const controller = new AbortController();
@@ -157,6 +173,10 @@ async function requestOpenRouterChatCore(args: {
   const json = parseMaybeJson(text) as Record<string, unknown> | null;
   if (!json) {
     throw new Error("OpenRouter returned non-JSON payload.");
+  }
+  const upstreamError = formatOpenRouterErrorPayload(json);
+  if (upstreamError) {
+    throw new Error(upstreamError);
   }
 
   const choice = (json.choices as Array<Record<string, unknown>> | undefined)?.[0];

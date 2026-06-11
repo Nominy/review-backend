@@ -133,6 +133,31 @@ describe("requestOpenRouterChat", () => {
     ).rejects.toThrow("OpenRouter returned empty assistant content");
   });
 
+  it("surfaces top-level OpenRouter error payloads even when HTTP status is ok", async () => {
+    globalThis.fetch = ((_: string | URL | globalThis.Request, init?: RequestInit) => {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            error: {
+              message: "The operation was aborted",
+              code: 504
+            }
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      );
+    }) as unknown as typeof fetch;
+
+    await expect(
+      requestOpenRouterChat({
+        apiKey: "test-key",
+        model: "google/gemini-3.5-flash",
+        messages: [{ role: "user", content: "hello" }],
+        title: "test"
+      })
+    ).rejects.toThrow("OpenRouter error 504: The operation was aborted");
+  });
+
   it("retries without reasoning when routing rejects reasoning parameters", async () => {
     let callCount = 0;
 
