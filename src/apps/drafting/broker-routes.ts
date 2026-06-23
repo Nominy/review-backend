@@ -1,6 +1,6 @@
 import type { Elysia } from "elysia";
 import { isObject } from "../../shared/http";
-import { reviewRedistributionWithModel, transcribeSegmentWithModel } from "./broker-service";
+import { reviewRedistributionsWithModel, transcribeSegmentWithModel } from "./broker-service";
 import type {
   AudioCueAudioTrackInput,
   BrokerRedistributeTextRequest,
@@ -85,27 +85,34 @@ function isRedistributionAllocation(value: unknown): boolean {
   return isObject(value) && typeof value.segmentId === "string" && typeof value.text === "string";
 }
 
+function assertRedistributionGroup(group: unknown): void {
+  if (!isObject(group)) {
+    throw new Error("group is required.");
+  }
+  if (typeof group.groupId !== "string" || !group.groupId.trim()) {
+    throw new Error("group.groupId is required.");
+  }
+  if (typeof group.speakerKey !== "string" || typeof group.fullText !== "string") {
+    throw new Error("group speakerKey and fullText are required.");
+  }
+  if (!Array.isArray(group.segments) || !group.segments.every(isRedistributionSegment)) {
+    throw new Error("group.segments must be a valid segment array.");
+  }
+  if (!Array.isArray(group.draftAllocations) || !group.draftAllocations.every(isRedistributionAllocation)) {
+    throw new Error("group.draftAllocations must be a valid allocation array.");
+  }
+}
+
 function assertRedistributeTextBody(body: unknown): asserts body is BrokerRedistributeTextRequest {
   if (!isObject(body)) {
     throw new Error("Body must be an object.");
   }
   assertCommonBrokerFields(body);
-
-  if (!isObject(body.group)) {
-    throw new Error("group is required.");
+  if (!Array.isArray(body.groups) || !body.groups.length) {
+    throw new Error("groups must be a non-empty valid group array.");
   }
-
-  if (typeof body.group.groupId !== "string" || !body.group.groupId.trim()) {
-    throw new Error("group.groupId is required.");
-  }
-  if (typeof body.group.speakerKey !== "string" || typeof body.group.fullText !== "string") {
-    throw new Error("group speakerKey and fullText are required.");
-  }
-  if (!Array.isArray(body.group.segments) || !body.group.segments.every(isRedistributionSegment)) {
-    throw new Error("group.segments must be a valid segment array.");
-  }
-  if (!Array.isArray(body.group.draftAllocations) || !body.group.draftAllocations.every(isRedistributionAllocation)) {
-    throw new Error("group.draftAllocations must be a valid allocation array.");
+  for (const group of body.groups) {
+    assertRedistributionGroup(group);
   }
 }
 
@@ -186,7 +193,7 @@ export function registerBrokerRoutes(app: AnyElysia): void {
   app.post("/api/broker/redistribute-text", async ({ body, set }) => {
     try {
       const { request } = await parseBrokerPayload(body, assertRedistributeTextBody);
-      return await reviewRedistributionWithModel(request);
+      return await reviewRedistributionsWithModel(request);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       set.status = getErrorStatus(message);

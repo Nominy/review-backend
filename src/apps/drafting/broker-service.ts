@@ -13,6 +13,8 @@ import { selectAudioTracksForRow, sliceAudioTrackForRow, type SliceAudioArgs } f
 import type {
   AudioCueAudioTrackInput,
   BrokerRedistributeTextRequest,
+  BrokerRedistributeTextResponse,
+  BrokerRedistributionGroup,
   BrokerRedistributionReview,
   BrokerTranscribeSegmentRequest,
   BrokerTranscribeSegmentResponse,
@@ -27,6 +29,10 @@ type BrokerTranscribeDeps = {
 
 type BrokerRedistributeDeps = {
   validateModel?: (model: string) => Promise<void>;
+};
+
+type BrokerRedistributeTextGroupRequest = Omit<BrokerRedistributeTextRequest, "groups"> & {
+  group: BrokerRedistributionGroup;
 };
 
 function normalizeServiceTier(value: OpenRouterServiceTier | undefined): OpenRouterServiceTier {
@@ -158,7 +164,7 @@ function buildRedistributionSystemPrompt(): string {
   ].join("\n");
 }
 
-function buildRedistributionUserPrompt(request: BrokerRedistributeTextRequest): string {
+function buildRedistributionUserPrompt(request: BrokerRedistributeTextGroupRequest): string {
   return [
     `Group id: ${request.group.groupId}`,
     `Speaker key: ${request.group.speakerKey}`,
@@ -222,8 +228,8 @@ export async function transcribeSegmentWithModel(
   return { text, model };
 }
 
-export async function reviewRedistributionWithModel(
-  request: BrokerRedistributeTextRequest,
+async function reviewRedistributionGroupWithModel(
+  request: BrokerRedistributeTextGroupRequest,
   deps: BrokerRedistributeDeps = {}
 ): Promise<{ review: BrokerRedistributionReview; model: string }> {
   const apiKey = request.openRouterApiKey.trim();
@@ -250,5 +256,53 @@ export async function reviewRedistributionWithModel(
   return {
     review: parseRedistributionReview(response),
     model
+  };
+}
+
+export async function reviewRedistributionsWithModel(
+  request: BrokerRedistributeTextRequest,
+  deps: BrokerRedistributeDeps = {}
+): Promise<BrokerRedistributeTextResponse> {
+  const apiKey = request.openRouterApiKey.trim();
+  if (!apiKey) {
+    throw new Error("openRouterApiKey is required.");
+  }
+  const model = resolveModel(request.model);
+  await (deps.validateModel ?? assertOpenRouterModelExists)(model);
+
+  const results = await Promise.all(
+    request.groups.map(async (group) => {
+      try {
+        const response = await reviewRedistributionGroupWithModel(
+          {
+            openRouterApiKey: request.openRouterApiKey,
+            model,
+            serviceTier: request.serviceTier,
+            reasoningEffort: request.reasoningEffort,
+            group
+          },
+          {
+            validateModel: async () => {}
+          }
+        );
+        return {
+          groupId: group.groupId,
+          ok: true as const,
+          review: response.review,
+          model: response.model
+        };
+      } catch (error) {
+        return {
+          groupId: group.groupId,
+          ok: false as const,
+          error: error instanceof Error ? error.message : String(error)
+        };
+      }
+    })
+  );
+
+  return {
+    model,
+    results
   };
 }

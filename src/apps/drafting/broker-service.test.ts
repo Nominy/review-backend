@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { reviewRedistributionWithModel, transcribeSegmentWithModel } from "./broker-service";
-import type { AudioCueAudioTrackInput, BrokerRedistributeTextRequest, BrokerTranscribeSegmentRequest } from "./types";
+import { reviewRedistributionsWithModel, transcribeSegmentWithModel } from "./broker-service";
+import type {
+  AudioCueAudioTrackInput,
+  BrokerRedistributeTextRequest,
+  BrokerTranscribeSegmentRequest
+} from "./types";
 
 const originalFetch = globalThis.fetch;
 
@@ -83,70 +87,101 @@ describe("transcribeSegmentWithModel", () => {
   });
 });
 
-describe("reviewRedistributionWithModel", () => {
-  test("asks OpenRouter for the Helper redistribution review JSON contract", async () => {
-    let postedBody: any = null;
+describe("reviewRedistributionsWithModel", () => {
+  test("reviews every group server-side in parallel and returns ordered per-group results", async () => {
+    const pendingResponses: Array<{
+      body: any;
+      resolve: (response: Response) => void;
+    }> = [];
 
     globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
-      postedBody = JSON.parse(String(init?.body));
-      return new Response(
-        JSON.stringify({
-          choices: [
-            {
-              message: {
-                content: JSON.stringify({
-                  acceptDraft: false,
-                  moves: [
-                    {
-                      fromIndex: 1,
-                      toIndex: 2,
-                      sentenceCount: 1
-                    }
-                  ],
-                  notes: "Move trailing word."
-                })
-              }
-            }
-          ]
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" }
-        }
-      );
+      const body = JSON.parse(String(init?.body));
+      return await new Promise<Response>((resolve) => {
+        pendingResponses.push({ body, resolve });
+      });
     }) as unknown as typeof fetch;
 
     const request: BrokerRedistributeTextRequest = {
       openRouterApiKey: "sk-or-test",
       model: "google/gemini-3-flash-preview",
       serviceTier: "flex",
-      group: {
-        groupId: "group-1",
-        speakerKey: "Speaker 1",
-        fullText: "Привет мир.",
-        segments: [
-          { id: "s1", index: 0, speakerKey: "Speaker 1", startSeconds: 0, endSeconds: 1, text: "Привет мир" },
-          { id: "s2", index: 1, speakerKey: "Speaker 1", startSeconds: 1, endSeconds: 2, text: "" }
-        ],
-        draftAllocations: [
-          { segmentId: "s1", text: "Привет мир" },
-          { segmentId: "s2", text: "" }
-        ]
-      }
+      groups: [
+        {
+          groupId: "group-1",
+          speakerKey: "Speaker 1",
+          fullText: "Первый текст.",
+          segments: [
+            { id: "s1", index: 0, speakerKey: "Speaker 1", startSeconds: 0, endSeconds: 1, text: "Первый" }
+          ],
+          draftAllocations: [{ segmentId: "s1", text: "Первый текст." }]
+        },
+        {
+          groupId: "group-2",
+          speakerKey: "Speaker 2",
+          fullText: "Второй текст.",
+          segments: [
+            { id: "s2", index: 0, speakerKey: "Speaker 2", startSeconds: 1, endSeconds: 2, text: "Второй" }
+          ],
+          draftAllocations: [{ segmentId: "s2", text: "Второй текст." }]
+        }
+      ]
     };
 
-    const response = await reviewRedistributionWithModel(request, {
+    const responsePromise = reviewRedistributionsWithModel(request, {
       validateModel: async () => {}
     });
 
-    expect(response.review).toEqual({
-      acceptDraft: false,
-      moves: [{ fromIndex: 1, toIndex: 2, sentenceCount: 1 }],
-      notes: "Move trailing word."
-    });
+    while (pendingResponses.length < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    pendingResponses[1].resolve(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: JSON.stringify({ acceptDraft: true, moves: [], notes: "second" }) } }]
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+    pendingResponses[0].resolve(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: JSON.stringify({ acceptDraft: false, moves: [{ fromIndex: 1, toIndex: 2, sentenceCount: 1 }], notes: "first" }) } }]
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    const response = await responsePromise;
+
+    expect(pendingResponses.map((item) => item.body.messages[1].content)).toEqual([
+      expect.stringContaining("Group id: group-1"),
+      expect.stringContaining("Group id: group-2")
+    ]);
+    expect(pendingResponses[0].body.messages[0].content).toContain("Return JSON only");
+    expect(pendingResponses[0].body.service_tier).toBe("flex");
+    expect(response.results).toEqual([
+      {
+        groupId: "group-1",
+        ok: true,
+        review: {
+          acceptDraft: false,
+          moves: [{ fromIndex: 1, toIndex: 2, sentenceCount: 1 }],
+          notes: "first"
+        },
+        model: "google/gemini-3-flash-preview"
+      },
+      {
+        groupId: "group-2",
+        ok: true,
+        review: {
+          acceptDraft: true,
+          moves: [],
+          notes: "second"
+        },
+        model: "google/gemini-3-flash-preview"
+      }
+    ]);
     expect(response.model).toBe("google/gemini-3-flash-preview");
-    expect(postedBody.messages[0].content).toContain("Return JSON only");
-    expect(postedBody.messages[1].content).toContain("Привет мир.");
-    expect(postedBody.service_tier).toBe("flex");
   });
 });

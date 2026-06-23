@@ -108,7 +108,25 @@ export interface BrokerRedistributeTextRequest {
   model?: string;
   serviceTier?: OpenRouterServiceTier;
   reasoningEffort?: DraftReasoningEffort;
-  group: BrokerRedistributionGroup;
+  groups: BrokerRedistributionGroup[];
+}
+
+export type BrokerRedistributeTextResult =
+  | {
+      groupId: string;
+      ok: true;
+      review: BrokerRedistributionReview;
+      model: string;
+    }
+  | {
+      groupId: string;
+      ok: false;
+      error: string;
+    };
+
+export interface BrokerRedistributeTextResponse {
+  model: string;
+  results: BrokerRedistributeTextResult[];
 }
 
 export interface AudioCueRewriteContext extends RowRewriteContext {
