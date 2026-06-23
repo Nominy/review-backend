@@ -49,6 +49,68 @@ export interface AudioCueClipInput {
   base64: string;
 }
 
+export interface BrokerTranscriptSegment {
+  rowId: string;
+  speakerKey: string;
+  startSeconds: number;
+  endSeconds: number;
+}
+
+export interface BrokerTranscribeSegmentRequest {
+  openRouterApiKey: string;
+  model?: string;
+  serviceTier?: OpenRouterServiceTier;
+  reasoningEffort?: DraftReasoningEffort;
+  segment: BrokerTranscriptSegment;
+}
+
+export interface BrokerTranscribeSegmentResponse {
+  text: string;
+  model: string;
+}
+
+export interface BrokerRedistributionSegment {
+  id: string;
+  index: number;
+  speakerKey: string;
+  startSeconds: number | null;
+  endSeconds: number | null;
+  text: string;
+}
+
+export interface BrokerRedistributionAllocation {
+  segmentId: string;
+  text: string;
+}
+
+export interface BrokerRedistributionGroup {
+  groupId: string;
+  speakerKey: string;
+  fullText: string;
+  segments: BrokerRedistributionSegment[];
+  draftAllocations: BrokerRedistributionAllocation[];
+}
+
+export interface BrokerRedistributionMove {
+  fromIndex: number;
+  toIndex: number;
+  sentenceCount: number;
+}
+
+export interface BrokerRedistributionReview {
+  acceptDraft: boolean;
+  moves: BrokerRedistributionMove[];
+  notes?: string;
+}
+
+export interface BrokerRedistributeTextRequest {
+  openRouterApiKey: string;
+  model?: string;
+  serviceTier?: OpenRouterServiceTier;
+  reasoningEffort?: DraftReasoningEffort;
+  group: BrokerRedistributionGroup;
+}
+
 export interface AudioCueRewriteContext extends RowRewriteContext {
   audioClips: AudioCueClipInput[];
   tagSystem: string;

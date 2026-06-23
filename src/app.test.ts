@@ -74,6 +74,60 @@ describe("createApp", () => {
     expect(payload.error).toContain("projectPreset");
   });
 
+  it("mounts the Helper AI broker API under /api/broker", async () => {
+    const response = await createApp().handle(
+      new Request("http://localhost/api/broker/redistribute-text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toContain("openRouterApiKey");
+  });
+
+  it("rejects broker segment transcription when no speaker audio is attached", async () => {
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const target = String(url);
+      if (target.includes("/api/v1/models")) {
+        return new Response(
+          JSON.stringify({
+            data: [{ id: "google/gemini-3-flash-preview", architecture: { input_modalities: ["text", "audio"] } }]
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          }
+        );
+      }
+
+      throw new Error(`Unexpected fetch ${target}`);
+    }) as unknown as typeof fetch;
+
+    const response = await createApp().handle(
+      new Request("http://localhost/api/broker/transcribe-segment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          openRouterApiKey: "sk-or-test",
+          model: "google/gemini-3-flash-preview",
+          segment: {
+            rowId: "r1",
+            speakerKey: "Speaker 1",
+            startSeconds: 0,
+            endSeconds: 1
+          }
+        })
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toContain("missing_speaker_audio:Speaker 1");
+  });
+
   it("rejects unsupported drafting reasoning effort values", async () => {
     globalThis.fetch = (async (url: string | URL | Request) => {
       const target = String(url);

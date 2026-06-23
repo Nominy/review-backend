@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
+import { registerBrokerRoutes } from "./apps/drafting/broker-routes";
 import { registerDraftingRoutes } from "./apps/drafting/routes";
 import { registerReviewRoutes } from "./apps/review/routes";
 import { config } from "./config";
@@ -48,6 +49,7 @@ export function createApp(): AnyElysia {
 
   registerReviewRoutes(app);
   registerDraftingRoutes(app);
+  registerBrokerRoutes(app);
 
   return app;
 }
