@@ -5,7 +5,7 @@ import { runDeterministicRules } from "./deterministic-rules";
 import { computeReviewMetrics } from "./metrics";
 import { buildStructuralDiffPromptPacket } from "./structural-diff";
 import { getTemplateRegistry } from "./template-registry";
-import type { Annotation, NormalizedState } from "./types";
+import type { Annotation, NormalizedState, PromptPacket } from "./types";
 
 function annotation(
   id: string,
@@ -157,5 +157,86 @@ describe("computeReviewMetrics structural diff integration", () => {
     expect(prompts.userPrompt).toContain("[SEG MERGED]");
     expect(prompts.systemPrompt).toContain("TIMESTAMP SHIFT");
     expect(prompts.systemPrompt).toContain("SEG ADDED, SEG DELETED, SEG SPLIT, and SEG MERGED");
+  });
+
+  test("extracts paired same-slot original-only and current-only text samples", () => {
+    const before = "<искаженная-речь> О, ну, это- это хорошая традиция. [смешок] Да. </искаженная-речь> [фон-другое-отчетливо]";
+    const after = "<искаженная-речь> О, ну, это- </искаженная-речь> это хорошая традиция. [смешок] Да. [фон-другое-тихо]";
+    const packet = {
+      session: {
+        actionId: "review-action",
+        metricsVersion: "test",
+        promptVersion: "test",
+      },
+      overview: {
+        originalSegments: 1,
+        currentSegments: 1,
+        originalWords: 8,
+        currentWords: 8,
+        segmentCountDelta: 0,
+        localTextChangeCount: 1,
+        hasStructuralDiff: true,
+      },
+      localTextEvidence: {
+        changedPairs: [],
+        originalOnlySamples: [
+          {
+            id: "a",
+            text: before,
+            startTimeInSeconds: 45.123,
+            endTimeInSeconds: 49.419,
+          },
+        ],
+        currentOnlySamples: [
+          {
+            id: "b",
+            text: after,
+            startTimeInSeconds: 45.123,
+            endTimeInSeconds: 49.419,
+          },
+        ],
+      },
+      structuralDiff: {
+        segmentation: {
+          overview: {
+            mappingCount: 1,
+            unchangedCount: 1,
+            modifiedCount: 0,
+            splitCount: 0,
+            mergeCount: 0,
+            addedCount: 0,
+            deletedCount: 0,
+          },
+          samples: [],
+        },
+        timestamp: {
+          overview: {
+            precision: 1,
+            recall: 1,
+            f1: 1,
+            totalSegments: 1,
+            matchedSegments: 1,
+            unmatchedSegments: 0,
+            avgShiftMs: 0,
+            within50ms: 100,
+            within100ms: 100,
+            within200ms: 100,
+          },
+          samples: [],
+        },
+      },
+    } satisfies PromptPacket;
+
+    const changes = extractChanges(packet);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({
+      type: "TEXT CHANGE",
+      evidenceDetail: {
+        kind: "text-diff",
+        before,
+        after,
+      },
+    });
+    expect(changes[0]?.description).toContain("[фон-другое-тихо]");
   });
 });

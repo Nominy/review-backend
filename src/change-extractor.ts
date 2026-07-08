@@ -105,27 +105,108 @@ function formatTimestampEdgeShift(edge: "start" | "end", deltaMs: number): strin
   return `${edge} ${direction} (${deltaMs > 0 ? "+" : ""}${deltaMs}ms, ${getTimestampShiftMeaning(direction)})`;
 }
 
+type LocalTextSample = PromptPacket["localTextEvidence"]["originalOnlySamples"][number];
+
+function createTextChange(before: string, after: string, inlineDiff?: string): Change {
+  const description = formatTextChange(before, after);
+
+  return {
+    index: 0,
+    type: "TEXT CHANGE",
+    categories: CHANGE_TYPE_CATEGORIES["TEXT CHANGE"],
+    summary: summarizeTextPair(before, after),
+    evidence: description,
+    evidenceDetail: {
+      kind: "text-diff",
+      before,
+      after,
+      ...(inlineDiff ? { inlineDiff } : {})
+    },
+    description
+  };
+}
+
+function sampleOverlapRatio(left: LocalTextSample, right: LocalTextSample): number {
+  const overlapStart = Math.max(left.startTimeInSeconds, right.startTimeInSeconds);
+  const overlapEnd = Math.min(left.endTimeInSeconds, right.endTimeInSeconds);
+  const overlap = Math.max(0, overlapEnd - overlapStart);
+  const leftDuration = Math.max(0, left.endTimeInSeconds - left.startTimeInSeconds);
+  const rightDuration = Math.max(0, right.endTimeInSeconds - right.startTimeInSeconds);
+  const baseDuration = Math.max(0.001, Math.min(leftDuration, rightDuration));
+  return overlap / baseDuration;
+}
+
+function isSameSampleSlot(before: LocalTextSample, after: LocalTextSample): boolean {
+  const startDelta = Math.abs(before.startTimeInSeconds - after.startTimeInSeconds);
+  const endDelta = Math.abs(before.endTimeInSeconds - after.endTimeInSeconds);
+  const sameEdges = startDelta <= 0.25 && endDelta <= 0.25;
+  if (sameEdges) {
+    return true;
+  }
+  return sampleOverlapRatio(before, after) >= 0.8;
+}
+
+function findMatchingCurrentSample(
+  before: LocalTextSample,
+  currentOnlySamples: LocalTextSample[],
+  usedCurrentIndexes: Set<number>
+): number {
+  let bestIndex = -1;
+  let bestScore = 0;
+
+  for (let index = 0; index < currentOnlySamples.length; index += 1) {
+    if (usedCurrentIndexes.has(index)) continue;
+
+    const current = currentOnlySamples[index];
+    if (!current || !isSameSampleSlot(before, current)) continue;
+
+    const score =
+      sampleOverlapRatio(before, current) -
+      Math.abs(before.startTimeInSeconds - current.startTimeInSeconds) -
+      Math.abs(before.endTimeInSeconds - current.endTimeInSeconds);
+
+    if (bestIndex === -1 || score > bestScore) {
+      bestIndex = index;
+      bestScore = score;
+    }
+  }
+
+  return bestIndex;
+}
+
 function extractTextChanges(packet: PromptPacket): Change[] {
   const changes: Change[] = [];
-  const pairs = packet.localTextEvidence.changedPairs;
 
-  for (const pair of pairs) {
-    const description = formatTextChange(pair.before, pair.after);
+  for (const pair of packet.localTextEvidence.changedPairs) {
+    changes.push(createTextChange(pair.before, pair.after, pair.inlineDiff));
+  }
 
-    changes.push({
-      index: 0,
-      type: "TEXT CHANGE",
-      categories: CHANGE_TYPE_CATEGORIES["TEXT CHANGE"],
-      summary: summarizeTextPair(pair.before, pair.after),
-      evidence: description,
-      evidenceDetail: {
-        kind: "text-diff",
-        before: pair.before,
-        after: pair.after,
-        ...(pair.inlineDiff ? { inlineDiff: pair.inlineDiff } : {})
-      },
-      description
-    });
+  const usedCurrentIndexes = new Set<number>();
+  const unmatchedOriginals: LocalTextSample[] = [];
+
+  for (const original of packet.localTextEvidence.originalOnlySamples) {
+    const currentIndex = findMatchingCurrentSample(
+      original,
+      packet.localTextEvidence.currentOnlySamples,
+      usedCurrentIndexes
+    );
+
+    if (currentIndex === -1) {
+      unmatchedOriginals.push(original);
+      continue;
+    }
+
+    usedCurrentIndexes.add(currentIndex);
+    changes.push(createTextChange(original.text, packet.localTextEvidence.currentOnlySamples[currentIndex]!.text));
+  }
+
+  for (const original of unmatchedOriginals) {
+    changes.push(createTextChange(original.text, ""));
+  }
+
+  for (let index = 0; index < packet.localTextEvidence.currentOnlySamples.length; index += 1) {
+    if (usedCurrentIndexes.has(index)) continue;
+    changes.push(createTextChange("", packet.localTextEvidence.currentOnlySamples[index]!.text));
   }
 
   return changes;
