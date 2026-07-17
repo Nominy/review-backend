@@ -78,7 +78,7 @@ describe("generateDraft", () => {
     expect(response.draftRows[1].warnings[0]).toBe("rewrite_error");
   });
 
-  test("passes only the current row into the rewrite context", async () => {
+  test("omits neighbors when each speaker has only one row", async () => {
     const seenContexts: RowRewriteContext[] = [];
 
     await generateDraft(baseRequest, {
@@ -95,6 +95,106 @@ describe("generateDraft", () => {
     expect(seenContexts[1]).toEqual({
       currentRow: baseRequest.rows[1]
     });
+  });
+
+  test("passes chronological same-speaker neighbors across interleaved rows", async () => {
+    const rows: GenerateDraftRequest["rows"] = [
+      { rowId: "a2", speakerKey: "a", startSeconds: 4, endSeconds: 5, text: "A2.", index: 2 },
+      { rowId: "b1", speakerKey: "b", startSeconds: 2, endSeconds: 3, text: "B1.", index: 1 },
+      { rowId: "a1", speakerKey: "a", startSeconds: 1, endSeconds: 2, text: "A1.", index: 0 },
+      { rowId: "a3", speakerKey: "a", startSeconds: 7, endSeconds: 8, text: "A3.", index: 3 }
+    ];
+    const contexts = new Map<string, RowRewriteContext>();
+
+    await generateDraft(
+      { ...baseRequest, rows },
+      {
+        rewriteRow: async (context) => {
+          contexts.set(context.currentRow.rowId, context);
+          return context.currentRow.text;
+        }
+      }
+    );
+
+    expect(contexts.get("a2")?.previousRow?.rowId).toBe("a1");
+    expect(contexts.get("a2")?.nextRow?.rowId).toBe("a3");
+    expect(contexts.get("a1")?.previousRow).toBeUndefined();
+    expect(contexts.get("b1")?.previousRow).toBeUndefined();
+    expect(contexts.get("b1")?.nextRow).toBeUndefined();
+  });
+
+  test("cleans stale continuation punctuation across long same-speaker gaps", async () => {
+    const rows: GenerateDraftRequest["rows"] = [
+      { rowId: "r1", speakerKey: "a", startSeconds: 1, endSeconds: 2, text: "До.", index: 0 },
+      { rowId: "other", speakerKey: "b", startSeconds: 2, endSeconds: 3, text: "Ответ.", index: 1 },
+      { rowId: "r2", speakerKey: "a", startSeconds: 4, endSeconds: 5, text: "[шум] ...было, [смех]", index: 2 },
+      { rowId: "r3", speakerKey: "a", startSeconds: 7, endSeconds: 8, text: "После.", index: 3 }
+    ];
+
+    const response = await generateDraft(
+      { ...baseRequest, rows },
+      { rewriteRow: async (context) => context.currentRow.text }
+    );
+
+    expect(response.draftRows[2]).toEqual({
+      rowId: "r2",
+      rewrittenText: "[шум] было. [смех]",
+      status: "rewritten",
+      warnings: ["length_delta", "temporal_punctuation_cleanup"]
+    });
+  });
+
+  test("preserves continuation punctuation at an exact one-second gap", async () => {
+    const rows: GenerateDraftRequest["rows"] = [
+      { rowId: "r1", speakerKey: "a", startSeconds: 1, endSeconds: 3, text: "До.", index: 0 },
+      { rowId: "r2", speakerKey: "a", startSeconds: 4, endSeconds: 5, text: "...было,", index: 1 },
+      { rowId: "r3", speakerKey: "a", startSeconds: 6, endSeconds: 7, text: "После.", index: 2 }
+    ];
+
+    const response = await generateDraft(
+      { ...baseRequest, rows },
+      { rewriteRow: async (context) => context.currentRow.text }
+    );
+
+    expect(response.draftRows[1]?.rewrittenText).toBe("...было,");
+    expect(response.draftRows[1]?.warnings).toEqual([]);
+  });
+
+  test("normalizes a model-added terminal mark after a source comma", async () => {
+    const response = await generateDraft(
+      {
+        ...baseRequest,
+        rows: [{ rowId: "r1", speakerKey: "a", startSeconds: 1, endSeconds: 2, text: "Да,", index: 0 }]
+      },
+      { rewriteRow: async () => "Да,. [смех]" }
+    );
+
+    expect(response.draftRows[0]?.rewrittenText).toBe("Да. [смех]");
+    expect(response.draftRows[0]?.warnings).toContain("temporal_punctuation_cleanup");
+  });
+
+  test("keeps deterministic punctuation cleanup when the model rewrite fails", async () => {
+    const response = await generateDraft(
+      {
+        ...baseRequest,
+        rows: [{ rowId: "r1", speakerKey: "a", startSeconds: 1, endSeconds: 2, text: "Да,", index: 0 }]
+      },
+      {
+        maxAttemptsPerRow: 1,
+        rewriteRow: async () => {
+          throw new Error("offline");
+        }
+      }
+    );
+
+    expect(response.draftRows[0]).toEqual({
+      rowId: "r1",
+      rewrittenText: "Да.",
+      status: "rewritten",
+      warnings: ["rewrite_error", "offline", "temporal_punctuation_cleanup"]
+    });
+    expect(response.summary.rewrittenRows).toBe(1);
+    expect(response.summary.failedRows).toBe(0);
   });
 
   test("emits row progress as each row completes", async () => {

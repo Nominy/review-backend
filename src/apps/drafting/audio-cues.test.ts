@@ -76,10 +76,10 @@ describe("generateAudioCueDraft", () => {
 
     const filterGraph = args[args.indexOf("-filter_complex") + 1];
 
-    expect(filterGraph).toContain("atrim=start=0.8:duration=1.4");
+    expect(filterGraph).toContain("atrim=start=0:duration=3");
     expect(filterGraph).toContain("[out0]");
     expect(filterGraph).not.toContain(",[out0]");
-    expect(filterGraph).toContain("atrim=start=2.8:duration=1.65");
+    expect(filterGraph).toContain("atrim=start=2:duration=3.25");
     expect(filterGraph).toContain("[out1]");
     expect(filterGraph).not.toContain(",[out1]");
     expect(args).toContain("row-1.wav");
@@ -117,7 +117,7 @@ describe("generateAudioCueDraft", () => {
     expect(plan.slices).toHaveLength(1);
     expect(plan.slices[0]?.row.rowId).toBe("tail");
     expect(plan.skippedRows.map((row) => row.rowId)).toEqual(["past-end"]);
-    expect(filterGraph).toContain("atrim=start=149.27:duration=0.73");
+    expect(filterGraph).toContain("atrim=start=148.47:duration=1.53");
     expect(args).toContain("tail.wav");
     expect(args).not.toContain("past-end.wav");
   });

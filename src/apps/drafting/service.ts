@@ -221,6 +221,121 @@ async function runWithConcurrency<T>(
   );
 }
 
+type RowNeighbors = {
+  previousRow?: GenerateDraftRequest["rows"][number];
+  nextRow?: GenerateDraftRequest["rows"][number];
+};
+
+function compareRowsByTime(
+  left: GenerateDraftRequest["rows"][number],
+  right: GenerateDraftRequest["rows"][number]
+): number {
+  const leftStart = left.startSeconds;
+  const rightStart = right.startSeconds;
+  if (leftStart !== null && rightStart !== null && leftStart !== rightStart) {
+    return leftStart - rightStart;
+  }
+  if (leftStart !== null && rightStart === null) {
+    return -1;
+  }
+  if (leftStart === null && rightStart !== null) {
+    return 1;
+  }
+  return left.index - right.index;
+}
+
+function buildRowNeighbors(rows: GenerateDraftRequest["rows"]): Map<GenerateDraftRequest["rows"][number], RowNeighbors> {
+  const rowsBySpeaker = new Map<string, GenerateDraftRequest["rows"]>();
+  for (const row of rows) {
+    const speakerRows = rowsBySpeaker.get(row.speakerKey);
+    if (speakerRows) {
+      speakerRows.push(row);
+    } else {
+      rowsBySpeaker.set(row.speakerKey, [row]);
+    }
+  }
+
+  const neighbors = new Map<GenerateDraftRequest["rows"][number], RowNeighbors>();
+  for (const speakerRows of rowsBySpeaker.values()) {
+    speakerRows.sort(compareRowsByTime);
+    for (let index = 0; index < speakerRows.length; index += 1) {
+      neighbors.set(speakerRows[index]!, {
+        ...(index > 0 ? { previousRow: speakerRows[index - 1] } : {}),
+        ...(index + 1 < speakerRows.length ? { nextRow: speakerRows[index + 1] } : {})
+      });
+    }
+  }
+  return neighbors;
+}
+
+function leadingVisibleContentOffset(text: string): number {
+  let offset = 0;
+  while (offset < text.length) {
+    while (offset < text.length && /\s/u.test(text[offset]!)) {
+      offset += 1;
+    }
+    const opening = text[offset];
+    const closing = opening === "[" ? "]" : opening === "<" ? ">" : opening === "{" ? "}" : null;
+    if (!closing) {
+      break;
+    }
+    const closingOffset = text.indexOf(closing, offset + 1);
+    if (closingOffset < 0) {
+      break;
+    }
+    offset = closingOffset + 1;
+  }
+  while (offset < text.length && /\s/u.test(text[offset]!)) {
+    offset += 1;
+  }
+  return offset;
+}
+
+function stabilizeTemporalPunctuation(
+  text: string,
+  currentRow: GenerateDraftRequest["rows"][number],
+  neighbors: RowNeighbors
+): { text: string; changed: boolean } {
+  let stabilized = text;
+  const previousGap =
+    neighbors.previousRow?.endSeconds !== null &&
+    neighbors.previousRow?.endSeconds !== undefined &&
+    currentRow.startSeconds !== null
+      ? currentRow.startSeconds - neighbors.previousRow.endSeconds
+      : null;
+  const leadingOffset = leadingVisibleContentOffset(stabilized);
+  if (previousGap !== null && previousGap > 1 && stabilized.startsWith("...", leadingOffset)) {
+    const suffixOffset = leadingOffset + 3 + (stabilized[leadingOffset + 3] === " " ? 1 : 0);
+    stabilized = stabilized.slice(0, leadingOffset) + stabilized.slice(suffixOffset);
+  }
+
+  const duplicatedTerminalPunctuation = stabilized.match(
+    /,([.!?])((?:\s|\[[^[\]\r\n]+\]|<[^<>\r\n]+>|\{[^{}\r\n]+\})*)$/u
+  );
+  if (duplicatedTerminalPunctuation?.index !== undefined) {
+    stabilized =
+      stabilized.slice(0, duplicatedTerminalPunctuation.index) +
+      duplicatedTerminalPunctuation[1] +
+      duplicatedTerminalPunctuation[2];
+  }
+
+  const nextGap =
+    neighbors.nextRow?.startSeconds !== null &&
+    neighbors.nextRow?.startSeconds !== undefined &&
+    currentRow.endSeconds !== null
+      ? neighbors.nextRow.startSeconds - currentRow.endSeconds
+      : null;
+  const closesBeforeLongGap = neighbors.nextRow === undefined || (nextGap !== null && nextGap > 1);
+  if (closesBeforeLongGap) {
+    const terminalComma = stabilized.match(/,((?:\s|\[[^[\]\r\n]+\]|<[^<>\r\n]+>|\{[^{}\r\n]+\})*)$/u);
+    if (terminalComma?.index !== undefined) {
+      stabilized = stabilized.slice(0, terminalComma.index) + "." + stabilized.slice(terminalComma.index + 1);
+    }
+  }
+
+  return { text: stabilized, changed: stabilized !== text };
+}
+
 async function prepareBatchedAudioInputs(args: {
   rows: GenerateDraftRequest["rows"];
   audioTracks: AudioCueAudioTrackInput[];
@@ -323,6 +438,7 @@ export async function generateDraft(
   const maxAttemptsPerRow = Math.max(1, deps.maxAttemptsPerRow ?? 2);
   const envRowConcurrency = process.env.DRAFT_ROW_CONCURRENCY ? Number(process.env.DRAFT_ROW_CONCURRENCY) : undefined;
   const rowConcurrency = normalizeConcurrency(deps.rowConcurrency ?? envRowConcurrency, request.rows.length);
+  const neighborsByRow = buildRowNeighbors(request.rows);
 
   const draftRows: Array<DraftRowResult | undefined> = new Array(request.rows.length);
   let completedRowCount = 0;
@@ -364,8 +480,10 @@ export async function generateDraft(
       }
     }
 
+    const neighbors = neighborsByRow.get(currentRow) ?? {};
     const context: RowRewriteContext = {
       currentRow,
+      ...neighbors,
       ...(audioClips?.length ? { audioClips, tagSystem } : {})
     };
     const originalRow = context.currentRow;
@@ -374,11 +492,17 @@ export async function generateDraft(
     try {
       candidate = await rewriteRowWithRetry(rewriteRow, context, maxAttemptsPerRow);
     } catch (error) {
+      const fallback = stabilizeTemporalPunctuation(originalRow.text, originalRow, neighbors);
       const rowResult: DraftRowResult = {
         rowId: originalRow.rowId,
-        rewrittenText: originalRow.text,
-        status: "failed",
-        warnings: ["rewrite_error", error instanceof Error ? error.message : String(error), ...audioWarnings]
+        rewrittenText: fallback.text,
+        status: fallback.changed ? "rewritten" : "failed",
+        warnings: [
+          "rewrite_error",
+          error instanceof Error ? error.message : String(error),
+          ...(fallback.changed ? ["temporal_punctuation_cleanup"] : []),
+          ...audioWarnings
+        ]
       };
       draftRows[index] = rowResult;
       completedRowCount += 1;
@@ -393,12 +517,17 @@ export async function generateDraft(
       return;
     }
 
-    const validation = validateRewrittenRow(originalRow.text, candidate);
+    const stabilized = stabilizeTemporalPunctuation(candidate, originalRow, neighbors);
+    const validation = validateRewrittenRow(originalRow.text, stabilized.text);
     const rowResult: DraftRowResult = {
       rowId: originalRow.rowId,
       rewrittenText: validation.acceptedText,
       status: validation.status,
-      warnings: [...validation.warnings, ...audioWarnings]
+      warnings: [
+        ...validation.warnings,
+        ...(stabilized.changed ? ["temporal_punctuation_cleanup"] : []),
+        ...audioWarnings
+      ]
     };
     draftRows[index] = rowResult;
     completedRowCount += 1;

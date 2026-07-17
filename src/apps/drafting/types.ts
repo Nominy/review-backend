@@ -190,6 +190,8 @@ export interface LoadedProjectPreset {
 
 export interface RowRewriteContext {
   currentRow: DraftingTranscriptRowInput;
+  previousRow?: DraftingTranscriptRowInput;
+  nextRow?: DraftingTranscriptRowInput;
   audioClips?: AudioCueClipInput[];
   tagSystem?: string;
 }

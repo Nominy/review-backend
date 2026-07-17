@@ -28,7 +28,7 @@ const TAG_SYSTEM_PATH = fileURLToPath(
   new URL("../../../docs/reference/russian-transcription-project-res-bank-tags.csv", import.meta.url)
 );
 export const DEFAULT_AUDIO_CUE_MODEL = "google/gemini-3-flash-preview";
-const AUDIO_PADDING_SECONDS = 0.2;
+const AUDIO_PADDING_SECONDS = 1;
 const MIN_AUDIO_SLICE_SECONDS = 0.05;
 
 export type SliceAudioArgs = {

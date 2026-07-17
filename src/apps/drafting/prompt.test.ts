@@ -28,6 +28,9 @@ describe("buildUserPrompt", () => {
     expect(prompt).toContain("Do not tag ordinary breathing");
     expect(prompt).toContain("Most added audio cues should be laughter tags");
     expect(prompt).toContain("Other audible-event tags are much rarer");
+    expect(prompt).toContain("Correct transcript words only when the audio evidence is clear");
+    expect(prompt).toContain("Recover a missing short interjection");
+    expect(prompt).toContain("never copy speech from a neighboring row");
   });
 
   test("explains audio tag placement grammar for square, angle, and curly tags", () => {
@@ -104,8 +107,9 @@ describe("buildUserPrompt", () => {
     const prompt = buildUserPrompt(context);
 
     expect(prompt).toContain("Do not replace transcript words");
-    expect(prompt).toContain("Trust the human-written words over the audio");
-    expect(prompt).toContain("Allowed edits are only tags, punctuation, and numeric normalization");
+    expect(prompt).toContain("Trust the human-written words over any transcription guess");
+    expect(prompt).toContain("Allowed edits without audio are only tags, punctuation, and numeric normalization");
+    expect(prompt).not.toContain("Correct transcript words only when the audio evidence is clear");
   });
 
   test("encourages adding clear audio cue tags instead of ignoring them", () => {
@@ -132,7 +136,42 @@ describe("buildUserPrompt", () => {
 
     expect(prompt).toContain("When a clear allowed audible cue is present, add the appropriate tag");
     expect(prompt).toContain("Conservative does not mean silently ignoring clear audible events");
-    expect(prompt).toContain("Scan the whole attached row clip before deciding that no tag is needed");
+    expect(prompt).toContain("Scan the whole attached clip");
+  });
+
+  test("includes same-speaker neighbors as context without making them editable", () => {
+    const context: RowRewriteContext = {
+      currentRow: {
+        rowId: "r2",
+        speakerKey: "Speaker 1",
+        startSeconds: 3,
+        endSeconds: 4,
+        text: "Текущая.",
+        index: 2
+      },
+      previousRow: {
+        rowId: "r1",
+        speakerKey: "Speaker 1",
+        startSeconds: 1,
+        endSeconds: 2,
+        text: "До.",
+        index: 0
+      },
+      nextRow: {
+        rowId: "r3",
+        speakerKey: "Speaker 1",
+        startSeconds: 5,
+        endSeconds: 6,
+        text: "После.",
+        index: 4
+      }
+    };
+
+    const prompt = buildUserPrompt(context);
+
+    expect(prompt).toContain('Предыдущая: time=1-2 text="До."');
+    expect(prompt).toContain('Следующая: time=5-6 text="После."');
+    expect(prompt).toContain("только для понимания; не копируй из них слова");
   });
 
   test("requires comma isolation around standalone interjections", () => {

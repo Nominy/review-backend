@@ -36,15 +36,17 @@ export function buildUserPrompt(context: RowRewriteContext): string {
   const audioCueLines = context.audioClips?.length
     ? [
       "",
-      "Audio clips for this exact row are attached to the same request.",
-      "Use the audio only to add conservative audible-cue tags to the final Gold row.",
-      "Scan the whole attached row clip before deciding that no tag is needed.",
+      "Audio clips include the exact row plus boundary context. The row timestamps below define which words and events belong to the current row.",
+      "Use audio as primary evidence for audible-event tags, punctuation, clearly misheard words, and short boundary interjections.",
+      "Scan the whole attached clip, but never copy speech from a neighboring row into the current row.",
+      "Correct transcript words only when the audio evidence is clear and the change is small. Recover a missing short interjection such as 'мгм', 'угу', or 'да' only when it is clearly audible inside the current row timing.",
+      "Never paraphrase, expand an uncertain phrase, or replace a plausible human word merely because another wording is possible.",
       "When a clear allowed audible cue is present, add the appropriate tag; do not leave clear laughter, coughs, crying, or other allowed audible events untagged just because tags are rare.",
       "Conservative does not mean silently ignoring clear audible events. It means using only allowed tags, avoiding weak guesses, and placing each tag exactly where the event belongs.",
       "Do not tag ordinary breathing, microphone noise, pauses, or unclear background texture.",
       "Most added audio cues should be laughter tags. Other audible-event tags are much rarer and require very clear evidence.",
-      "If no useful cue is obvious, do not add any audio cue tag.",
-      "Use only exact tag spellings from the audio tag system below, and preserve all existing tags literally.",
+      "If no useful correction or cue is obvious, leave the row unchanged.",
+      "Preserve existing tags unless the audio clearly proves that a tag's type or placement is wrong. A proven correction may relocate or replace that tag only within the current row; never delete a tag merely because evidence is uncertain.",
       "",
       "Audio tag placement grammar:",
       "- Square-bracket tags like [смех] mark a separate audible event. Put them only immediately before the audible event begins. If the event happens after the spoken words, the tag can be at the end of the row because it is still before that event. Do not use square brackets to wrap words.",
@@ -63,6 +65,8 @@ export function buildUserPrompt(context: RowRewriteContext): string {
       ...context.audioClips.map((clip, index) =>
         `${index + 1}. trackId=${clip.trackId}${clip.speakerKey ? ` speakerKey=${clip.speakerKey}` : ""}${
           clip.trackLabel ? ` trackLabel=${clip.trackLabel}` : ""
+        }${clip.clipStartSeconds !== undefined ? ` clipStartSeconds=${clip.clipStartSeconds}` : ""}${
+          clip.clipEndSeconds !== undefined ? ` clipEndSeconds=${clip.clipEndSeconds}` : ""
         }`
       ),
       "",
@@ -71,12 +75,35 @@ export function buildUserPrompt(context: RowRewriteContext): string {
     ]
     : [];
 
+  const neighborContextLines = [
+    "Контекст соседних строк того же говорящего (только для понимания; не копируй из них слова в текущую строку):",
+    context.previousRow
+      ? `Предыдущая: time=${context.previousRow.startSeconds ?? "?"}-${context.previousRow.endSeconds ?? "?"} text=${JSON.stringify(context.previousRow.text)}`
+      : "Предыдущая: (нет)",
+    context.nextRow
+      ? `Следующая: time=${context.nextRow.startSeconds ?? "?"}-${context.nextRow.endSeconds ?? "?"} text=${JSON.stringify(context.nextRow.text)}`
+      : "Следующая: (нет)",
+    ""
+  ];
+
   return [
     "Преобразуй только текущую строку по правилам выше.",
+    ...neighborContextLines,
     "Сохраняй исходные слова и порядок слов максимально близко к оригиналу.",
-    "Do not replace transcript words. Trust the human-written words over the audio and over your own transcription guess. The audio is only evidence for tags and very small formatting choices.",
-    "Allowed edits are only tags, punctuation, and numeric normalization. Do not rewrite vocabulary, do not replace short interjections, and do not turn one word into a different word.",
-    "Не удаляй, не переформулируй и не переставляй никакие теги, которые уже были в исходной строке. Сохрани их буквально, включая скобки, регистр, пробелы и позицию относительно слов.",
+    ...(context.audioClips?.length
+      ? [
+          "For this audio-backed row, make only evidence-backed word corrections and boundary-interjection recovery described below.",
+          "Do not import words or events that fall outside the current row timestamps."
+        ]
+      : [
+          "Do not replace transcript words. Trust the human-written words over any transcription guess.",
+          "Allowed edits without audio are only tags, punctuation, and numeric normalization. Do not rewrite vocabulary or turn one word into a different word."
+        ]),
+    ...(context.audioClips?.length
+      ? []
+      : [
+          "Не удаляй, не переформулируй и не переставляй никакие теги, которые уже были в исходной строке. Сохрани их буквально, включая скобки, регистр, пробелы и позицию относительно слов."
+        ]),
     "Если сомневаешься между '-' и '--', предпочитай '--', кроме явного заикания внутри того же слова.",
     "Будь внимателен к пунктуации, особенно вокруг междометий и частиц вроде 'ну', 'а', 'э'. Не превращай их в заикание без явного основания.",
     "Comma-isolate standalone interjections and filler particles. For a row-start interjection, put a comma after it: 'Ну, я думаю'. For a middle interjection, put commas on both sides: 'Я, ну, думаю'. For sentence-final interjections, keep the normal sentence punctuation after the interjection.",
