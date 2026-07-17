@@ -8,7 +8,6 @@ on:
 
 concurrency:
   group: review-backend-production
-  timeout-minutes: 20
 
 jobs:
   test-and-deploy:
@@ -56,79 +55,256 @@ jobs:
       - name: Deploy over SSH
         env:
           SSHOPTS: >-
-            -o ServerAliveInterval=10
-            -o ServerAliveCountMax=60
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=120
             -o ConnectTimeout=20
             -o TCPKeepAlive=yes
             -o StrictHostKeyChecking=accept-new
             -o UserKnownHostsFile=/dev/null
+            -o LogLevel=ERROR
+          REMOTE_STEP_ATTEMPTS: "3"
+          REMOTE_STEP_DELAY_SECONDS: "10"
+          SSH_COMMAND_TIMEOUT_SECONDS: "900"
         shell: bash
         run: |
           set -euo pipefail
-          export SSHPASS="$SERVER_PASSWORD"
-          openrouter_key_b64="$(printf '%s' "$OPENROUTER_API_KEY" | base64 -w0)"
 
-          deploy_cmd() {
-            sshpass -e ssh \
-              $SSHOPTS \
-              "$SERVER_USER@$SERVER_HOST" \
-              "DEPLOY_PATH='$DEPLOY_PATH' OPENROUTER_API_KEY_B64='$openrouter_key_b64' GIT_COMMIT='$GITHUB_SHA' GIT_BRANCH='$GITHUB_REF_NAME' timeout 10m bash -se" <<'REMOTE'
-            set -euo pipefail
+          deploy_log="$RUNNER_TEMP/review-backend-deploy.log"
+          touch "$deploy_log"
 
-            cd "$DEPLOY_PATH"
-
-            backup_root="/opt/review/backups"
-            backup_dir="$backup_root/review-backend-$(date -u +%Y%m%dT%H%M%SZ)"
-            mkdir -p "$backup_dir"
-            [ -f .env.runtime ] && cp -a .env.runtime "$backup_dir/.env.runtime"
-            [ -d data ] && cp -a data "$backup_dir/data"
-            [ -d templates ] && cp -a templates "$backup_dir/templates"
-
-            git fetch origin main
-            git reset --hard origin/main
-            git clean -fd -e .env.runtime -e data/ -e logs/ -e node_modules/ -e templates/
-
-            [ -d "$backup_dir/data" ] && cp -a "$backup_dir/data" ./data
-            [ -d "$backup_dir/templates" ] && cp -a "$backup_dir/templates" ./templates
-            mkdir -p logs/pm2
-
-            touch .env.runtime
-            chmod 600 .env.runtime
-            tmp_env="$(mktemp)"
-            awk '!/^(OPENROUTER_API_KEY|GIT_COMMIT|GIT_BRANCH)=/' .env.runtime > "$tmp_env"
-            printf 'OPENROUTER_API_KEY=%s\n' "$(printf '%s' "$OPENROUTER_API_KEY_B64" | base64 -d)" >> "$tmp_env"
-            printf 'GIT_COMMIT=%s\n' "$GIT_COMMIT" >> "$tmp_env"
-            printf 'GIT_BRANCH=%s\n' "$GIT_BRANCH" >> "$tmp_env"
-            mv "$tmp_env" .env.runtime
-            chmod 600 .env.runtime
-
-            bun install --frozen-lockfile
-
-            pm2 restart ecosystem.config.cjs --update-env || pm2 start ecosystem.config.cjs
-            pm2 save
-            for attempt in $(seq 1 30); do
-              if curl -fsS http://127.0.0.1:3001/health >/dev/null; then
-                exit 0
-              fi
-              sleep 1
-            done
-
-            pm2 status
-            tail -n 120 logs/pm2/review-backend.out.log || true
-            tail -n 120 logs/pm2/review-backend.error.log || true
-            exit 1
-          REMOTE
+          log() {
+            printf '[%s] %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" | tee -a "$deploy_log"
           }
 
-          for attempt in 1 2 3; do
-            if deploy_cmd; then
-              echo "deploy over SSH succeeded on attempt $attempt"
-              break
+          openrouter_key_b64="$(printf '%s' "$OPENROUTER_API_KEY" | base64 -w0)"
+
+          run_remote_step() {
+            local step_name="$1"
+            local step_script="$2"
+            local attempt
+            local remote_log
+            local status
+            local attempts="${REMOTE_STEP_ATTEMPTS}"
+            local delay_seconds="${REMOTE_STEP_DELAY_SECONDS}"
+            local timeout_seconds="${SSH_COMMAND_TIMEOUT_SECONDS}"
+            local run_id
+            local script_path
+
+            run_id="$(date -u +%Y%m%dT%H%M%SZ)"
+            script_path="$(mktemp)"
+            printf '%s\n' "$step_script" > "$script_path"
+            chmod 700 "$script_path"
+
+            for attempt in $(seq 1 "$attempts"); do
+              remote_log="/tmp/review-backend-${step_name}-${run_id}-attempt-${attempt}.log"
+
+              log "Starting remote step '${step_name}' (attempt ${attempt}/${attempts})"
+              set +e
+              set -o pipefail
+              timeout "$timeout_seconds" \
+                SSHPASS="$SERVER_PASSWORD" \
+                sshpass -e ssh \
+                  $SSHOPTS \
+                  "$SERVER_USER@$SERVER_HOST" \
+                  "DEPLOY_PATH='$DEPLOY_PATH' OPENROUTER_API_KEY_B64='$openrouter_key_b64' GIT_COMMIT='$GITHUB_SHA' GIT_BRANCH='$GITHUB_REF_NAME' DEPLOY_STEP='$step_name' DEPLOY_LOG_FILE='$remote_log' bash -se" \
+                  < "$script_path" |& tee -a "$deploy_log"
+              status=$?
+              set +o pipefail
+              set -e
+
+              if [ "$status" -eq 0 ]; then
+                log "Remote step '${step_name}' succeeded on attempt ${attempt}"
+                rm -f "$script_path"
+                return 0
+              fi
+
+              log "Remote step '${step_name}' failed on attempt ${attempt} (exit ${status})"
+              log "Remote step '${step_name}' diagnostics:"
+              timeout "$timeout_seconds" \
+                SSHPASS="$SERVER_PASSWORD" \
+                sshpass -e ssh \
+                  $SSHOPTS \
+                  "$SERVER_USER@$SERVER_HOST" \
+                  "tail -n 240 '$remote_log' 2>/dev/null || true" | tee -a "$deploy_log"
+
+              if [ "$attempt" -lt "$attempts" ]; then
+                log "Retrying step '${step_name}' in ${delay_seconds}s"
+                sleep "$delay_seconds"
+                continue
+              fi
+            done
+
+            rm -f "$script_path"
+            return 1
+          }
+
+          prep_script='
+          set -euo pipefail
+
+          exec > >(tee -a "$DEPLOY_LOG_FILE") 2>&1
+
+          log() {
+            printf "[%s] %s\n" "$(date -u "+%Y-%m-%dT%H:%M:%SZ")" "$*"
+          }
+
+          : "${DEPLOY_PATH:?DEPLOY_PATH is required}"
+          : "${GIT_COMMIT:?GIT_COMMIT is required}"
+          : "${GIT_BRANCH:?GIT_BRANCH is required}"
+          : "${OPENROUTER_API_KEY_B64:?OPENROUTER_API_KEY_B64 is required}"
+
+          cd "$DEPLOY_PATH"
+
+          backup_root="/opt/review/backups"
+          backup_dir="$backup_root/review-backend-$(date -u +%Y%m%dT%H%M%SZ)"
+          mkdir -p "$backup_dir"
+          [ -f .env.runtime ] && cp -a .env.runtime "$backup_dir/.env.runtime"
+          [ -d data ] && cp -a data "$backup_dir/data"
+          [ -d templates ] && cp -a templates "$backup_dir/templates"
+          log "Backed up runtime data to $backup_dir"
+
+          if [ -d .git ]; then
+            git rev-parse HEAD > .deploy-previous-commit
+          fi
+          log "Stored previous deployment commit marker"
+
+          git fetch origin main
+          git reset --hard origin/main
+          git clean -fd -e .env.runtime -e data/ -e logs/ -e node_modules/ -e templates/
+
+          [ -d "$backup_dir/data" ] && cp -a "$backup_dir/data" ./data
+          [ -d "$backup_dir/templates" ] && cp -a "$backup_dir/templates" ./templates
+
+          mkdir -p logs/pm2
+          touch .env.runtime
+          chmod 600 .env.runtime
+          tmp_env="$(mktemp)"
+          awk "!/^(OPENROUTER_API_KEY|GIT_COMMIT|GIT_BRANCH)=/" .env.runtime > "$tmp_env"
+          printf "OPENROUTER_API_KEY=%s\n" "$(printf "%s" "$OPENROUTER_API_KEY_B64" | base64 -d)" >> "$tmp_env"
+          printf "GIT_COMMIT=%s\n" "$GIT_COMMIT" >> "$tmp_env"
+          printf "GIT_BRANCH=%s\n" "$GIT_BRANCH" >> "$tmp_env"
+          mv "$tmp_env" .env.runtime
+          chmod 600 .env.runtime
+          log "Rewrote .env.runtime"
+          '
+
+          install_script='
+          set -euo pipefail
+          exec > >(tee -a "$DEPLOY_LOG_FILE") 2>&1
+
+          log() {
+            printf "[%s] %s\n" "$(date -u "+%Y-%m-%dT%H:%M:%SZ")" "$*"
+          }
+
+          : "${DEPLOY_PATH:?DEPLOY_PATH is required}"
+          cd "$DEPLOY_PATH"
+
+          log "Installing dependencies with bun"
+          bun install --frozen-lockfile
+          log "Dependencies installed"
+          '
+
+          service_script='
+          set -euo pipefail
+          exec > >(tee -a "$DEPLOY_LOG_FILE") 2>&1
+
+          log() {
+            printf "[%s] %s\n" "$(date -u "+%Y-%m-%dT%H:%M:%SZ")" "$*"
+          }
+
+          : "${DEPLOY_PATH:?DEPLOY_PATH is required}"
+          cd "$DEPLOY_PATH"
+
+          log "Restarting PM2 process"
+          mkdir -p logs/pm2
+          pm2 restart ecosystem.config.cjs --update-env || pm2 start ecosystem.config.cjs
+          pm2 save
+          pm2 status
+          log "PM2 restart completed"
+          '
+
+          health_script='
+          set -euo pipefail
+          exec > >(tee -a "$DEPLOY_LOG_FILE") 2>&1
+
+          log() {
+            printf "[%s] %s\n" "$(date -u "+%Y-%m-%dT%H:%M:%SZ")" "$*"
+          }
+
+          : "${DEPLOY_PATH:?DEPLOY_PATH is required}"
+          cd "$DEPLOY_PATH"
+
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3001/health >/dev/null; then
+              log "Health check passed on attempt $attempt"
+              exit 0
             fi
-            echo "deploy SSH attempt $attempt failed; retrying in 10s..."
-            if [ "$attempt" -eq 3 ]; then
-              echo "deploy over SSH failed after $attempt attempts"
-              exit 1
-            fi
-            sleep 10
+
+            log "Health check failed on attempt $attempt/60"
+            sleep 2
           done
+
+          log "Health check timed out; dumping pm2 logs"
+          pm2 status
+          tail -n 120 logs/pm2/review-backend.out.log || true
+          tail -n 120 logs/pm2/review-backend.error.log || true
+          exit 1
+          '
+
+          rollback_script='
+          set -euo pipefail
+          exec > >(tee -a "$DEPLOY_LOG_FILE") 2>&1
+
+          log() {
+            printf "[%s] %s\n" "$(date -u "+%Y-%m-%dT%H:%M:%SZ")" "$*"
+          }
+
+          : "${DEPLOY_PATH:?DEPLOY_PATH is required}"
+          rollback_marker_file="$DEPLOY_PATH/.deploy-previous-commit"
+          if [ ! -f "$rollback_marker_file" ]; then
+            log "Rollback marker missing: $rollback_marker_file"
+            exit 1
+          fi
+
+          previous_commit="$(cat "$rollback_marker_file")"
+          if [ -z "$previous_commit" ]; then
+            log "Rollback marker is empty"
+            exit 1
+          fi
+
+          cd "$DEPLOY_PATH"
+          git checkout "$previous_commit"
+          bun install --frozen-lockfile
+          pm2 restart ecosystem.config.cjs --update-env || pm2 start ecosystem.config.cjs
+          pm2 save
+          log "Rolled back to $previous_commit"
+          '
+
+          if ! run_remote_step "prepare" "$prep_script"; then
+            log "Deployment prepare step failed"
+            exit 1
+          fi
+
+          if ! run_remote_step "install" "$install_script"; then
+            log "Dependency installation step failed"
+            exit 1
+          fi
+
+          if ! run_remote_step "service" "$service_script"; then
+            log "Service restart step failed"
+            exit 1
+          fi
+
+          if ! run_remote_step "health" "$health_script"; then
+            log "Health check failed; attempting rollback"
+            if run_remote_step "rollback" "$rollback_script"; then
+              log "Rollback completed successfully; verifying health after rollback"
+              if run_remote_step "health" "$health_script"; then
+                log "Rollback health check passed"
+              else
+                log "Rollback health check failed"
+              fi
+            fi
+            exit 1
+          fi
+
+          log "Deployment completed successfully"
