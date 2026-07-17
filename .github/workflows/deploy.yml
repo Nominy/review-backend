@@ -56,8 +56,10 @@ jobs:
       - name: Deploy over SSH
         env:
           SSHOPTS: >-
-            -o ServerAliveInterval=15
-            -o ServerAliveCountMax=12
+            -o ServerAliveInterval=10
+            -o ServerAliveCountMax=60
+            -o ConnectTimeout=20
+            -o TCPKeepAlive=yes
             -o StrictHostKeyChecking=accept-new
             -o UserKnownHostsFile=/dev/null
         shell: bash
@@ -66,52 +68,67 @@ jobs:
           export SSHPASS="$SERVER_PASSWORD"
           openrouter_key_b64="$(printf '%s' "$OPENROUTER_API_KEY" | base64 -w0)"
 
-          sshpass -e ssh \
-            $SSHOPTS \
-            "$SERVER_USER@$SERVER_HOST" \
-            "DEPLOY_PATH='$DEPLOY_PATH' OPENROUTER_API_KEY_B64='$openrouter_key_b64' GIT_COMMIT='$GITHUB_SHA' GIT_BRANCH='$GITHUB_REF_NAME' bash -se" <<'REMOTE'
-          set -euo pipefail
+          deploy_cmd() {
+            sshpass -e ssh \
+              $SSHOPTS \
+              "$SERVER_USER@$SERVER_HOST" \
+              "DEPLOY_PATH='$DEPLOY_PATH' OPENROUTER_API_KEY_B64='$openrouter_key_b64' GIT_COMMIT='$GITHUB_SHA' GIT_BRANCH='$GITHUB_REF_NAME' timeout 10m bash -se" <<'REMOTE'
+            set -euo pipefail
 
-          cd "$DEPLOY_PATH"
+            cd "$DEPLOY_PATH"
 
-          backup_root="/opt/review/backups"
-          backup_dir="$backup_root/review-backend-$(date -u +%Y%m%dT%H%M%SZ)"
-          mkdir -p "$backup_dir"
-          [ -f .env.runtime ] && cp -a .env.runtime "$backup_dir/.env.runtime"
-          [ -d data ] && cp -a data "$backup_dir/data"
-          [ -d templates ] && cp -a templates "$backup_dir/templates"
+            backup_root="/opt/review/backups"
+            backup_dir="$backup_root/review-backend-$(date -u +%Y%m%dT%H%M%SZ)"
+            mkdir -p "$backup_dir"
+            [ -f .env.runtime ] && cp -a .env.runtime "$backup_dir/.env.runtime"
+            [ -d data ] && cp -a data "$backup_dir/data"
+            [ -d templates ] && cp -a templates "$backup_dir/templates"
 
-          git fetch origin main
-          git reset --hard origin/main
-          git clean -fd -e .env.runtime -e data/ -e logs/ -e node_modules/ -e templates/
+            git fetch origin main
+            git reset --hard origin/main
+            git clean -fd -e .env.runtime -e data/ -e logs/ -e node_modules/ -e templates/
 
-          [ -d "$backup_dir/data" ] && cp -a "$backup_dir/data" ./data
-          [ -d "$backup_dir/templates" ] && cp -a "$backup_dir/templates" ./templates
-          mkdir -p logs/pm2
+            [ -d "$backup_dir/data" ] && cp -a "$backup_dir/data" ./data
+            [ -d "$backup_dir/templates" ] && cp -a "$backup_dir/templates" ./templates
+            mkdir -p logs/pm2
 
-          touch .env.runtime
-          chmod 600 .env.runtime
-          tmp_env="$(mktemp)"
-          awk '!/^(OPENROUTER_API_KEY|GIT_COMMIT|GIT_BRANCH)=/' .env.runtime > "$tmp_env"
-          printf 'OPENROUTER_API_KEY=%s\n' "$(printf '%s' "$OPENROUTER_API_KEY_B64" | base64 -d)" >> "$tmp_env"
-          printf 'GIT_COMMIT=%s\n' "$GIT_COMMIT" >> "$tmp_env"
-          printf 'GIT_BRANCH=%s\n' "$GIT_BRANCH" >> "$tmp_env"
-          mv "$tmp_env" .env.runtime
-          chmod 600 .env.runtime
+            touch .env.runtime
+            chmod 600 .env.runtime
+            tmp_env="$(mktemp)"
+            awk '!/^(OPENROUTER_API_KEY|GIT_COMMIT|GIT_BRANCH)=/' .env.runtime > "$tmp_env"
+            printf 'OPENROUTER_API_KEY=%s\n' "$(printf '%s' "$OPENROUTER_API_KEY_B64" | base64 -d)" >> "$tmp_env"
+            printf 'GIT_COMMIT=%s\n' "$GIT_COMMIT" >> "$tmp_env"
+            printf 'GIT_BRANCH=%s\n' "$GIT_BRANCH" >> "$tmp_env"
+            mv "$tmp_env" .env.runtime
+            chmod 600 .env.runtime
 
-          bun install --frozen-lockfile
+            bun install --frozen-lockfile
 
-          pm2 restart ecosystem.config.cjs --update-env || pm2 start ecosystem.config.cjs
-          pm2 save
-          for attempt in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:3001/health >/dev/null; then
-              exit 0
-            fi
-            sleep 1
-          done
+            pm2 restart ecosystem.config.cjs --update-env || pm2 start ecosystem.config.cjs
+            pm2 save
+            for attempt in $(seq 1 30); do
+              if curl -fsS http://127.0.0.1:3001/health >/dev/null; then
+                exit 0
+              fi
+              sleep 1
+            done
 
-          pm2 status
-          tail -n 120 logs/pm2/review-backend.out.log || true
-          tail -n 120 logs/pm2/review-backend.error.log || true
-          exit 1
+            pm2 status
+            tail -n 120 logs/pm2/review-backend.out.log || true
+            tail -n 120 logs/pm2/review-backend.error.log || true
+            exit 1
           REMOTE
+          }
+
+          for attempt in 1 2 3; do
+            if deploy_cmd; then
+              echo "deploy over SSH succeeded on attempt $attempt"
+              break
+            fi
+            echo "deploy SSH attempt $attempt failed; retrying in 10s..."
+            if [ "$attempt" -eq 3 ]; then
+              echo "deploy over SSH failed after $attempt attempts"
+              exit 1
+            fi
+            sleep 10
+          done
