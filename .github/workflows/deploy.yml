@@ -101,8 +101,7 @@ jobs:
               log "Starting remote step '${step_name}' (attempt ${attempt}/${attempts})"
               set +e
               set -o pipefail
-              timeout "$timeout_seconds" \
-                SSHPASS="$SERVER_PASSWORD" \
+              SSHPASS="$SERVER_PASSWORD" timeout "$timeout_seconds" \
                 sshpass -e ssh \
                   $SSHOPTS \
                   "$SERVER_USER@$SERVER_HOST" \
@@ -120,8 +119,7 @@ jobs:
 
               log "Remote step '${step_name}' failed on attempt ${attempt} (exit ${status})"
               log "Remote step '${step_name}' diagnostics:"
-              timeout "$timeout_seconds" \
-                SSHPASS="$SERVER_PASSWORD" \
+              SSHPASS="$SERVER_PASSWORD" timeout "$timeout_seconds" \
                 sshpass -e ssh \
                   $SSHOPTS \
                   "$SERVER_USER@$SERVER_HOST" \
