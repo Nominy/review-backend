@@ -8,12 +8,12 @@ on:
 
 concurrency:
   group: review-backend-production
-  cancel-in-progress: false
+  timeout-minutes: 20
 
 jobs:
   test-and-deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -29,6 +29,11 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Install SSH helper
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sshpass
 
       - name: Typecheck
         run: bun run typecheck
@@ -49,18 +54,20 @@ jobs:
           test -n "$OPENROUTER_API_KEY"
 
       - name: Deploy over SSH
+        env:
+          SSHOPTS: >-
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=12
+            -o StrictHostKeyChecking=accept-new
+            -o UserKnownHostsFile=/dev/null
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y sshpass
-
           export SSHPASS="$SERVER_PASSWORD"
           openrouter_key_b64="$(printf '%s' "$OPENROUTER_API_KEY" | base64 -w0)"
 
           sshpass -e ssh \
-            -o StrictHostKeyChecking=accept-new \
-            -o UserKnownHostsFile=/dev/null \
+            $SSHOPTS \
             "$SERVER_USER@$SERVER_HOST" \
             "DEPLOY_PATH='$DEPLOY_PATH' OPENROUTER_API_KEY_B64='$openrouter_key_b64' GIT_COMMIT='$GITHUB_SHA' GIT_BRANCH='$GITHUB_REF_NAME' bash -se" <<'REMOTE'
           set -euo pipefail
