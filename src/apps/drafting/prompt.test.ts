@@ -86,8 +86,9 @@ describe("buildUserPrompt", () => {
 
     const prompt = buildUserPrompt(context);
 
-    expect(prompt).toContain("Never insert ... inside the row text");
-    expect(prompt).toContain("Only use ... at the very beginning");
+    expect(prompt).toContain("Ellipsis rule (strict)");
+    expect(prompt).toContain("ONLY legal '...' is at the very start");
+    expect(prompt).toContain("previous same-speaker segment ends with '--'");
     expect(prompt).toContain("Almost never write М-м");
     expect(prompt).toContain("Do not use М-м as a generic hesitation");
   });

@@ -291,6 +291,61 @@ function leadingVisibleContentOffset(text: string): number {
   return offset;
 }
 
+function trailingVisibleContentEnd(text: string): number {
+  let end = text.length;
+  while (end > 0) {
+    while (end > 0 && /\s/u.test(text[end - 1]!)) {
+      end -= 1;
+    }
+    if (end === 0) {
+      break;
+    }
+    const closing = text[end - 1];
+    const opening = closing === "]" ? "[" : closing === ">" ? "<" : closing === "}" ? "{" : null;
+    if (!opening) {
+      break;
+    }
+    const openingOffset = text.lastIndexOf(opening, end - 2);
+    if (openingOffset < 0) {
+      break;
+    }
+    end = openingOffset;
+  }
+  return end;
+}
+
+function previousRowEndsWithDoubleDash(previousText: string | undefined): boolean {
+  if (!previousText) {
+    return false;
+  }
+  const end = trailingVisibleContentEnd(previousText);
+  return previousText.slice(0, end).endsWith("--");
+}
+
+function stripIllegalEllipses(text: string, allowLeadingContinuation: boolean): string {
+  const leadingOffset = leadingVisibleContentOffset(text);
+  const head = text.slice(0, leadingOffset);
+  let body = text.slice(leadingOffset);
+  let leadingPrefix = "";
+
+  const leadingMatch = body.match(/^(?:\.\.\.|…)\s*/u);
+  if (leadingMatch) {
+    body = body.slice(leadingMatch[0].length);
+    if (allowLeadingContinuation) {
+      leadingPrefix = "...";
+    }
+  }
+
+  // Any remaining ellipsis is illegal (mid/end). Prefer cut-off mark.
+  body = body.replace(/(?:\.\.\.|…)/gu, "--");
+  // Collapse accidental "----" from adjacent replacements.
+  body = body.replace(/-{3,}/g, "--");
+  // Normalize spaces around mid-row cut markers: "word--word" -> "word-- word"
+  body = body.replace(/(\S)--(\S)/g, "$1-- $2");
+
+  return head + leadingPrefix + body;
+}
+
 function stabilizeTemporalPunctuation(
   text: string,
   currentRow: GenerateDraftRequest["rows"][number],
@@ -303,6 +358,12 @@ function stabilizeTemporalPunctuation(
     currentRow.startSeconds !== null
       ? currentRow.startSeconds - neighbors.previousRow.endSeconds
       : null;
+  const allowLeadingContinuation =
+    previousGap !== null &&
+    previousGap <= 1 &&
+    previousRowEndsWithDoubleDash(neighbors.previousRow?.text);
+  stabilized = stripIllegalEllipses(stabilized, allowLeadingContinuation);
+
   const leadingOffset = leadingVisibleContentOffset(stabilized);
   if (previousGap !== null && previousGap > 1 && stabilized.startsWith("...", leadingOffset)) {
     const suffixOffset = leadingOffset + 3 + (stabilized[leadingOffset + 3] === " " ? 1 : 0);
@@ -335,6 +396,7 @@ function stabilizeTemporalPunctuation(
 
   return { text: stabilized, changed: stabilized !== text };
 }
+
 
 async function prepareBatchedAudioInputs(args: {
   rows: GenerateDraftRequest["rows"];

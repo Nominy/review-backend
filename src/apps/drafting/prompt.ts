@@ -110,7 +110,7 @@ export function buildUserPrompt(context: RowRewriteContext): string {
     "Treat standalone forms like 'ну', 'а', 'э', 'мгм', 'угу', 'ага', 'ой', 'ах', 'эх', and 'о' this way when they function as interjections or fillers.",
     "Обращай внимание и на цифры, и на числительные, написанные словами.",
     "Если встречается обычное число, процент, диапазон или время без речевого искажения, нормализуй его как '123 {СКАЗ: ...}', '100 % {СКАЗ: процентов}', '1-2 {СКАЗ: один два}', '4:30 {СКАЗ: четыре тридцать}'. Если число в исходнике написано словом, сначала переведи его в цифры, а потом дай чтение в теге: 'две' -> '2 {СКАЗ: две}'.",
-    "Never insert ... inside the row text. Only use ... at the very beginning of a row when the row continues from a cut previous segment. Do not use ... for pauses, hesitation, uncertainty, trailing off, laughter, or missing audio inside the row.",
+    "Ellipsis rule (strict): never keep or insert '...' in the middle or at the end of the row. Mid/end '...' must become '--' (cut-off) or normal punctuation/removal (mere pause). The ONLY legal '...' is at the very start of the current row, and only when the previous same-speaker segment ends with '--' as a logical continuation: '...continued text'. If the previous segment does not end with '--', strip any leading '...'. Do not use '...' for hesitation, trailing off, uncertainty, or style.",
     "Almost never write М-м. Do not use М-м as a generic hesitation, filler, or replacement for unclear audio. Use it only when the speaker clearly says exactly 'М-м' as a meaningful interjection; otherwise prefer the closest existing words/interjections or leave the text unchanged.",
     ...audioCueLines,
     `Текущая строка: ${JSON.stringify(context.currentRow.text)}`

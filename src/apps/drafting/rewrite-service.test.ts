@@ -144,7 +144,7 @@ describe("generateDraft", () => {
     });
   });
 
-  test("preserves continuation punctuation at an exact one-second gap", async () => {
+  test("strips leading ellipsis unless previous same-speaker row ends with --", async () => {
     const rows: GenerateDraftRequest["rows"] = [
       { rowId: "r1", speakerKey: "a", startSeconds: 1, endSeconds: 3, text: "До.", index: 0 },
       { rowId: "r2", speakerKey: "a", startSeconds: 4, endSeconds: 5, text: "...было,", index: 1 },
@@ -156,8 +156,46 @@ describe("generateDraft", () => {
       { rewriteRow: async (context) => context.currentRow.text }
     );
 
+    expect(response.draftRows[1]?.rewrittenText).toBe("было,");
+    expect(response.draftRows[1]?.warnings).toContain("temporal_punctuation_cleanup");
+  });
+
+  test("keeps leading ellipsis only after previous -- within one second", async () => {
+    const rows: GenerateDraftRequest["rows"] = [
+      { rowId: "r1", speakerKey: "a", startSeconds: 1, endSeconds: 3, text: "До--", index: 0 },
+      { rowId: "r2", speakerKey: "a", startSeconds: 4, endSeconds: 5, text: "...было,", index: 1 },
+      { rowId: "r3", speakerKey: "a", startSeconds: 6, endSeconds: 7, text: "После.", index: 2 }
+    ];
+
+    const response = await generateDraft(
+      { ...baseRequest, rows },
+      { rewriteRow: async (context) => context.currentRow.text }
+    );
+
     expect(response.draftRows[1]?.rewrittenText).toBe("...было,");
     expect(response.draftRows[1]?.warnings).toEqual([]);
+  });
+
+  test("converts mid and end ellipses to cut markers", async () => {
+    const response = await generateDraft(
+      {
+        ...baseRequest,
+        rows: [
+          {
+            rowId: "r1",
+            speakerKey: "a",
+            startSeconds: 1,
+            endSeconds: 2,
+            text: "Я думал... ну ладно...",
+            index: 0
+          }
+        ]
+      },
+      { rewriteRow: async () => "Я думал... ну ладно..." }
+    );
+
+    expect(response.draftRows[0]?.rewrittenText).toBe("Я думал-- ну ладно--");
+    expect(response.draftRows[0]?.warnings).toContain("temporal_punctuation_cleanup");
   });
 
   test("normalizes a model-added terminal mark after a source comma", async () => {
