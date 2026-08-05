@@ -45,7 +45,7 @@ export function shouldUseGeminiPromptCaching(model: string): boolean {
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_CREDITS_URL = "https://openrouter.ai/api/v1/credits";
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
-const DEFAULT_OPENROUTER_CHAT_TIMEOUT_MS = 60_000;
+const DEFAULT_OPENROUTER_CHAT_TIMEOUT_MS = 180_000;
 
 let cachedModelIds: Set<string> | null = null;
 let cachedModelIdsAt = 0;
@@ -84,6 +84,23 @@ function parsePositiveIntegerEnv(name: string, defaultValue: number): number {
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
+
+function isTransientTransportError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message.includes("returned non-JSON payload") ||
+    error.message.includes("request timed out") ||
+    /OpenRouter HTTP (429|5\d\d):/.test(error.message)
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  setTimeout(resolve, ms);
+  return promise;
+}
+
+const TRANSIENT_TRANSPORT_ATTEMPTS = 3;
 
 function formatOpenRouterErrorPayload(json: Record<string, unknown>): string | null {
   if (!isObject(json.error)) {
@@ -144,6 +161,25 @@ async function requestOpenRouterChatCore(args: {
     require_parameters: true
     });
 
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= TRANSIENT_TRANSPORT_ATTEMPTS; attempt += 1) {
+    try {
+      return await performOpenRouterChatAttempt(args, provider);
+    } catch (error) {
+      lastError = error;
+      if (attempt >= TRANSIENT_TRANSPORT_ATTEMPTS || !isTransientTransportError(error)) {
+        throw error;
+      }
+      await sleep(500 * attempt);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+async function performOpenRouterChatAttempt(
+  args: Parameters<typeof requestOpenRouterChatCore>[0],
+  provider: { sort?: OpenRouterProviderSort; allow_fallbacks?: boolean; require_parameters?: boolean } | null
+): Promise<string> {
   const response = await fetchOpenRouterChat({
     method: "POST",
     headers: {
@@ -172,7 +208,9 @@ async function requestOpenRouterChatCore(args: {
 
   const json = parseMaybeJson(text) as Record<string, unknown> | null;
   if (!json) {
-    throw new Error("OpenRouter returned non-JSON payload.");
+    throw new Error(
+      `OpenRouter returned non-JSON payload (HTTP ${response.status}): ${text.trim().slice(0, 200) || "<empty body>"}`
+    );
   }
   const upstreamError = formatOpenRouterErrorPayload(json);
   if (upstreamError) {
