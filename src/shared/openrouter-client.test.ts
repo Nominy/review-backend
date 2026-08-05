@@ -111,6 +111,32 @@ describe("requestOpenRouterChat", () => {
     expect(calls).toBe(3);
   });
 
+  it("retries empty assistant SSE content before failing", async () => {
+    let calls = 0;
+    const emptySse = [
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+      "data: [DONE]",
+      ""
+    ].join("\n");
+
+    globalThis.fetch = (() => {
+      calls += 1;
+      return Promise.resolve(
+        new Response(emptySse, { status: 200, headers: { "Content-Type": "text/event-stream" } })
+      );
+    }) as unknown as typeof fetch;
+
+    await expect(
+      requestOpenRouterChat({
+        apiKey: "test-key",
+        model: "openai/test-model",
+        messages: [{ role: "user", content: "hello" }],
+        title: "test"
+      })
+    ).rejects.toThrow(/empty assistant content/);
+    expect(calls).toBe(3);
+  });
+
   it("omits service_tier when client selects default capacity", async () => {
     let postedBody: any = null;
 

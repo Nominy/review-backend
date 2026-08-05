@@ -89,9 +89,57 @@ function isTransientTransportError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   return (
     error.message.includes("returned non-JSON payload") ||
+    error.message.includes("returned empty assistant content") ||
     error.message.includes("request timed out") ||
     /OpenRouter HTTP (429|5\d\d):/.test(error.message)
   );
+}
+
+export function parseSseChatResponse(
+  text: string
+): { content: string; finishReason: string; error: string | null; chunkCount: number } | null {
+  if (!/^\s*(?::|data:)/.test(text)) {
+    return null;
+  }
+
+  let content = "";
+  let finishReason = "";
+  let error: string | null = null;
+  let chunkCount = 0;
+
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.startsWith("data:")) continue;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === "[DONE]") continue;
+    const chunk = parseMaybeJson(payload) as Record<string, unknown> | null;
+    if (!chunk) continue;
+    chunkCount += 1;
+
+    const upstreamError = formatOpenRouterErrorPayload(chunk);
+    if (upstreamError && !error) {
+      error = upstreamError;
+    }
+
+    const choice = (chunk.choices as Array<Record<string, unknown>> | undefined)?.[0];
+    if (!choice) continue;
+
+    const delta = choice.delta as Record<string, unknown> | undefined;
+    if (delta) {
+      content += normalizeContent(delta.content);
+      if ("text" in delta) content += normalizeContent(delta.text);
+    }
+
+    const message = choice.message as Record<string, unknown> | undefined;
+    if (message) content += normalizeContent(message.content);
+
+    if (typeof choice.finish_reason === "string" && choice.finish_reason) {
+      finishReason = choice.finish_reason;
+    } else if (typeof choice.native_finish_reason === "string" && choice.native_finish_reason) {
+      finishReason = choice.native_finish_reason;
+    }
+  }
+
+  return { content, finishReason, error, chunkCount };
 }
 
 function sleep(ms: number): Promise<void> {
@@ -219,9 +267,14 @@ async function performOpenRouterChatAttempt(
       throw new Error(sse.error);
     }
     if (!sse.content.trim()) {
-      throw new Error(
-        `OpenRouter returned empty assistant content${sse.finishReason ? ` (${sse.finishReason})` : ""}.`
-      );
+      const details = [
+        sse.finishReason ? `finish=${sse.finishReason}` : "",
+        `chunks=${sse.chunkCount}`,
+        text.trim() ? `body=${text.trim().slice(0, 160)}` : "body=<empty>"
+      ]
+        .filter(Boolean)
+        .join(" ");
+      throw new Error(`OpenRouter returned empty assistant content (${details}).`);
     }
     return sse.content;
   }
@@ -243,46 +296,6 @@ async function performOpenRouterChatAttempt(
   }
 
   return content;
-}
-
-export function parseSseChatResponse(
-  text: string
-): { content: string; finishReason: string; error: string | null } | null {
-  if (!/^\s*(?::|data:)/.test(text)) {
-    return null;
-  }
-
-  let content = "";
-  let finishReason = "";
-  let error: string | null = null;
-
-  for (const line of text.split(/\r?\n/)) {
-    if (!line.startsWith("data:")) continue;
-    const payload = line.slice(5).trim();
-    if (!payload || payload === "[DONE]") continue;
-    const chunk = parseMaybeJson(payload) as Record<string, unknown> | null;
-    if (!chunk) continue;
-
-    const upstreamError = formatOpenRouterErrorPayload(chunk);
-    if (upstreamError && !error) {
-      error = upstreamError;
-    }
-
-    const choice = (chunk.choices as Array<Record<string, unknown>> | undefined)?.[0];
-    if (!choice) continue;
-    const delta = choice.delta as Record<string, unknown> | undefined;
-    if (delta && typeof delta.content === "string") {
-      content += delta.content;
-    } else {
-      const message = choice.message as Record<string, unknown> | undefined;
-      if (message) content += normalizeContent(message.content);
-    }
-    if (typeof choice.finish_reason === "string" && choice.finish_reason) {
-      finishReason = choice.finish_reason;
-    }
-  }
-
-  return { content, finishReason, error };
 }
 
 export function parseMaybeJson(text: string): unknown | null {
