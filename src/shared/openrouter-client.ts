@@ -190,7 +190,7 @@ async function performOpenRouterChatAttempt(
     body: JSON.stringify({
       model: args.model,
       temperature: args.temperature ?? 0.2,
-      stream: false,
+      stream: true,
       ...(args.reasoningEffort ? { reasoning: {
           effort: args.reasoningEffort,
           exclude: true
@@ -206,18 +206,32 @@ async function performOpenRouterChatAttempt(
     throw new Error(`OpenRouter HTTP ${response.status}: ${text.slice(0, 300)}`);
   }
 
-  const json = parseMaybeJson(text) as Record<string, unknown> | null;
-  if (!json) {
+  const sse = parseSseChatResponse(text);
+  const json = sse ? null : (parseMaybeJson(text) as Record<string, unknown> | null);
+  if (!sse && !json) {
     throw new Error(
       `OpenRouter returned non-JSON payload (HTTP ${response.status}): ${text.trim().slice(0, 200) || "<empty body>"}`
     );
   }
-  const upstreamError = formatOpenRouterErrorPayload(json);
+
+  if (sse) {
+    if (sse.error) {
+      throw new Error(sse.error);
+    }
+    if (!sse.content.trim()) {
+      throw new Error(
+        `OpenRouter returned empty assistant content${sse.finishReason ? ` (${sse.finishReason})` : ""}.`
+      );
+    }
+    return sse.content;
+  }
+
+  const upstreamError = formatOpenRouterErrorPayload(json!);
   if (upstreamError) {
     throw new Error(upstreamError);
   }
 
-  const choice = (json.choices as Array<Record<string, unknown>> | undefined)?.[0];
+  const choice = (json!.choices as Array<Record<string, unknown>> | undefined)?.[0];
   const content = normalizeContent((choice?.message as Record<string, unknown> | undefined)?.content);
   if (!content.trim()) {
     const finishReason = typeof choice?.finish_reason === "string" ? choice.finish_reason : "";
@@ -229,6 +243,46 @@ async function performOpenRouterChatAttempt(
   }
 
   return content;
+}
+
+export function parseSseChatResponse(
+  text: string
+): { content: string; finishReason: string; error: string | null } | null {
+  if (!/^\s*(?::|data:)/.test(text)) {
+    return null;
+  }
+
+  let content = "";
+  let finishReason = "";
+  let error: string | null = null;
+
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.startsWith("data:")) continue;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === "[DONE]") continue;
+    const chunk = parseMaybeJson(payload) as Record<string, unknown> | null;
+    if (!chunk) continue;
+
+    const upstreamError = formatOpenRouterErrorPayload(chunk);
+    if (upstreamError && !error) {
+      error = upstreamError;
+    }
+
+    const choice = (chunk.choices as Array<Record<string, unknown>> | undefined)?.[0];
+    if (!choice) continue;
+    const delta = choice.delta as Record<string, unknown> | undefined;
+    if (delta && typeof delta.content === "string") {
+      content += delta.content;
+    } else {
+      const message = choice.message as Record<string, unknown> | undefined;
+      if (message) content += normalizeContent(message.content);
+    }
+    if (typeof choice.finish_reason === "string" && choice.finish_reason) {
+      finishReason = choice.finish_reason;
+    }
+  }
+
+  return { content, finishReason, error };
 }
 
 export function parseMaybeJson(text: string): unknown | null {

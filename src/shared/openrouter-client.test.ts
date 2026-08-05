@@ -46,6 +46,71 @@ describe("requestOpenRouterChat", () => {
     expect(postedBody.service_tier).toBe("flex");
   });
 
+  it("assembles assistant content from an SSE streaming response", async () => {
+    const sseBody = [
+      ": OPENROUTER PROCESSING",
+      "",
+      'data: {"choices":[{"delta":{"content":"Hello, "}}]}',
+      'data: {"choices":[{"delta":{"content":"world."},"finish_reason":"stop"}]}',
+      "data: [DONE]",
+      ""
+    ].join("\n");
+
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response(sseBody, { status: 200, headers: { "Content-Type": "text/event-stream" } })
+      )) as unknown as typeof fetch;
+
+    const content = await requestOpenRouterChat({
+      apiKey: "test-key",
+      model: "openai/test-model",
+      messages: [{ role: "user", content: "hello" }],
+      title: "test"
+    });
+
+    expect(content).toBe("Hello, world.");
+  });
+
+  it("surfaces mid-stream SSE error payloads", async () => {
+    const sseBody = [
+      'data: {"choices":[{"delta":{"content":"partial"}}]}',
+      'data: {"error":{"code":502,"message":"Provider exploded"}}',
+      ""
+    ].join("\n");
+
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response(sseBody, { status: 200, headers: { "Content-Type": "text/event-stream" } })
+      )) as unknown as typeof fetch;
+
+    await expect(
+      requestOpenRouterChat({
+        apiKey: "test-key",
+        model: "openai/test-model",
+        messages: [{ role: "user", content: "hello" }],
+        title: "test"
+      })
+    ).rejects.toThrow(/Provider exploded/);
+  });
+
+  it("retries empty 200 bodies before failing", async () => {
+    let calls = 0;
+    globalThis.fetch = (() => {
+      calls += 1;
+      return Promise.resolve(new Response("", { status: 200 }));
+    }) as unknown as typeof fetch;
+
+    await expect(
+      requestOpenRouterChat({
+        apiKey: "test-key",
+        model: "openai/test-model",
+        messages: [{ role: "user", content: "hello" }],
+        title: "test"
+      })
+    ).rejects.toThrow(/non-JSON payload/);
+    expect(calls).toBe(3);
+  });
+
   it("omits service_tier when client selects default capacity", async () => {
     let postedBody: any = null;
 
