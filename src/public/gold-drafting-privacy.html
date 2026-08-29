@@ -129,24 +129,25 @@
         <div class="eyebrow">Privacy Policy</div>
         <h1>Babel Gold Drafting</h1>
         <p class="lede">
-          Babel Gold Drafting is a browser extension used to turn existing Babel transcript rows
-          into a Silver-to-Gold draft. Audio input for audible-cue tags is an opt-in research
-          preview. This page explains what transcript and optional audio data is processed, how it is
-          used, and what the Chrome Web Store release sends to the production backend.
+          Babel Gold Drafting is a browser extension used to improve Babel transcript editing and
+          turn existing transcript rows into a Silver-to-Gold draft. It processes task audio in the
+          background to derive word timing metadata. Audio-enhanced drafting is enabled by default
+          and can send audio to an AI model for audible-cue tags; users can disable it in settings.
+          This page explains what transcript and audio data is processed and how it is used.
         </p>
-        <div class="meta">Last updated: 2026-05-16</div>
+        <div class="meta">Last updated: 2026-08-29</div>
       </section>
 
       <section class="section">
         <h2>Data the extension processes</h2>
         <p>
           The extension processes transcript content visible on
-          <strong>https://dashboard.babel.audio/*</strong>, including the current row text, row
-          order, speaker labels, and timing values needed to map the generated draft back onto the
-          existing Babel rows. By default, it does not collect or send task audio. When the user
-          enables the audio input research preview, it may also process task audio sources visible on
-          the same Babel page so the backend can cut short row-level clips by the original segment
-          timing.
+          <strong>https://dashboard.babel.audio/*</strong>, including current row text, row order,
+          speaker labels, and timing values. It also captures the two task audio lanes and sends them
+          to the configured L0 transcription endpoint to derive word start and end timestamps. This
+          background request does not replace transcript text or send audio to OpenRouter. When
+          audio-enhanced drafting is enabled, as it is by default, drafting requests may include task
+          audio so an audio-capable AI model can add allowed audible-cue tags.
         </p>
       </section>
 
@@ -156,6 +157,7 @@
         <ul>
           <li>generate a Silver-to-Gold draft for the current Babel job</li>
           <li>optionally add allowed audible-event, vocal-style, emotion, and background-sound tags</li>
+          <li>align transcript words with audio timestamps for more precise editing and playback features</li>
           <li>stream row-by-row drafting progress back to the extension</li>
           <li>return the final draft so the user can review the diff before applying changes</li>
         </ul>
@@ -168,11 +170,12 @@
       <section class="section">
         <h2>AI processing</h2>
         <p>
-          The backend uses the OpenRouter API key provided by the user in the extension settings to
-          add punctuation, formatting, and optional audio-cue tags to transcript rows. Default
-          requests include transcript text and related row metadata only. If the user enables the
-          audio input research preview, requests may also include short audio clips cut from the
-          current Babel task audio when the selected OpenRouter model supports audio input.
+          The background L0 transcription service runs a speech-recognition model to return word
+          timestamps used locally by editor features. It does not run the punctuation model or use
+          the recognized text to replace the transcript. Silver-to-Gold drafting separately uses the
+          OpenRouter API key provided by the user to add punctuation and formatting. When
+          audio-enhanced drafting is enabled, task audio may also be sent to the selected
+          audio-capable OpenRouter model. Users can disable audio-enhanced drafting in settings.
         </p>
       </section>
 
@@ -180,19 +183,19 @@
         <h2>Local storage</h2>
         <p>
           The extension stores user settings in <strong>chrome.storage.local</strong>, including the
-          backend URL, selected project preset, OpenRouter API key, selected model, service tier,
-          reasoning effort, and whether the audio input research preview is enabled.
+          drafting backend and L0 transcription URLs, selected project preset, OpenRouter API key,
+          selected model, service tier, reasoning effort, and audio-enhancement controls.
         </p>
       </section>
 
       <section class="section">
         <h2>Logging and retention</h2>
         <p>
-          The backend may temporarily process transcript requests to generate a response, but the
-          extension itself does not collect browsing history, search history, passwords, location
-          data, or click-tracking analytics. When the audio input research preview is enabled, task
-          audio is used for the requested drafting response and is not a separate audio-overlap or
-          reuse database workflow.
+          L0 task audio is processed transiently to produce word timing metadata; completed multipart
+          scratch files are removed by the transcription service. The drafting backend may
+          temporarily process transcript or audio-enhanced drafting requests to generate a response. The
+          extension does not collect browsing history, search history, passwords, location data, or
+          click-tracking analytics, and task audio is not used to build a separate reuse database.
         </p>
       </section>
 
