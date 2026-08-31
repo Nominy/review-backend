@@ -44,6 +44,8 @@ async function proxyLocalEngine(path: string, init?: RequestInit): Promise<Respo
     const headers = new Headers();
     const contentType = upstream.headers.get("content-type");
     if (contentType) headers.set("content-type", contentType);
+    const retryAfter = upstream.headers.get("retry-after");
+    if (retryAfter !== null) headers.set("retry-after", retryAfter);
     return new Response(upstream.body, {
       status: upstream.status,
       statusText: upstream.statusText,
