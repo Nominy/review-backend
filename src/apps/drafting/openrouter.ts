@@ -13,7 +13,7 @@ function stripCodeFences(content: string): string {
   return fencedMatch ? fencedMatch[1].trim() : trimmed;
 }
 
-function tryParseJsonResponse(content: string): string | null {
+function tryParseJsonResponse(content: string): string {
   const parsed = JSON.parse(content) as { rewrittenText?: unknown };
   if (!parsed || typeof parsed.rewrittenText !== "string") {
     throw new Error("Model response is not valid row rewrite JSON.");
@@ -39,8 +39,7 @@ export function parseResponseText(content: string): string {
   const normalized = stripCodeFences(content);
 
   try {
-    const parsed = tryParseJsonResponse(normalized);
-    return typeof parsed === "string" ? parsed : normalized;
+    return tryParseJsonResponse(normalized);
   } catch (error) {
     const recovered = tryRecoverSingleFieldResponse(normalized);
     if (typeof recovered === "string") {

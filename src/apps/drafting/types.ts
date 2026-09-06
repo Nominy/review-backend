@@ -34,10 +34,6 @@ export interface AudioCueAudioTrackInput {
   bytes: Uint8Array;
 }
 
-export interface AudioCueDraftRequest extends GenerateDraftRequest {
-  audioTracks: AudioCueAudioTrackInput[];
-}
-
 export interface AudioCueClipInput {
   trackId: string;
   speakerKey?: string;
@@ -127,11 +123,6 @@ export type BrokerRedistributeTextResult =
 export interface BrokerRedistributeTextResponse {
   model: string;
   results: BrokerRedistributeTextResult[];
-}
-
-export interface AudioCueRewriteContext extends RowRewriteContext {
-  audioClips: AudioCueClipInput[];
-  tagSystem: string;
 }
 
 export type DraftRowStatus = "rewritten" | "unchanged" | "failed";

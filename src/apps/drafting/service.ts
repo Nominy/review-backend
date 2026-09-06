@@ -551,11 +551,12 @@ export async function generateDraft(
     const originalRow = context.currentRow;
 
     let candidate = originalRow.text;
+    let rowResult: DraftRowResult | undefined;
     try {
       candidate = await rewriteRowWithRetry(rewriteRow, context, maxAttemptsPerRow);
     } catch (error) {
       const fallback = stabilizeTemporalPunctuation(originalRow.text, originalRow, neighbors);
-      const rowResult: DraftRowResult = {
+      rowResult = {
         rowId: originalRow.rowId,
         rewrittenText: fallback.text,
         status: fallback.changed ? "rewritten" : "failed",
@@ -566,31 +567,22 @@ export async function generateDraft(
           ...audioWarnings
         ]
       };
-      draftRows[index] = rowResult;
-      completedRowCount += 1;
-      if (deps.onRowComplete) {
-        await deps.onRowComplete({
-          row: rowResult,
-          completedRows: completedRowCount,
-          totalRows: request.rows.length,
-          summary: summarizeCompletedDraftRows(draftRows)
-        });
-      }
-      return;
     }
 
-    const stabilized = stabilizeTemporalPunctuation(candidate, originalRow, neighbors);
-    const validation = validateRewrittenRow(originalRow.text, stabilized.text);
-    const rowResult: DraftRowResult = {
-      rowId: originalRow.rowId,
-      rewrittenText: validation.acceptedText,
-      status: validation.status,
-      warnings: [
-        ...validation.warnings,
-        ...(stabilized.changed ? ["temporal_punctuation_cleanup"] : []),
-        ...audioWarnings
-      ]
-    };
+    if (!rowResult) {
+      const stabilized = stabilizeTemporalPunctuation(candidate, originalRow, neighbors);
+      const validation = validateRewrittenRow(originalRow.text, stabilized.text);
+      rowResult = {
+        rowId: originalRow.rowId,
+        rewrittenText: validation.acceptedText,
+        status: validation.status,
+        warnings: [
+          ...validation.warnings,
+          ...(stabilized.changed ? ["temporal_punctuation_cleanup"] : []),
+          ...audioWarnings
+        ]
+      };
+    }
     draftRows[index] = rowResult;
     completedRowCount += 1;
     if (deps.onRowComplete) {

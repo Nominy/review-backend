@@ -2,6 +2,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:f
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CATEGORIES } from "./rules";
+import { isObject } from "./shared/http";
 import type {
   CategoryName,
   ReviewTemplate,
@@ -43,10 +44,6 @@ function createCategoryRecord<T>(factory: () => T): Record<CategoryName, T> {
     acc[category] = factory();
     return acc;
   }, {} as Record<CategoryName, T>);
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 function assertCategory(value: unknown, context: string): CategoryName {

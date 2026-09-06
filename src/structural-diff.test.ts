@@ -4,7 +4,7 @@ import { extractChanges } from "./change-extractor";
 import { runDeterministicRules } from "./deterministic-rules";
 import { computeReviewMetrics } from "./metrics";
 import { buildStructuralDiffPromptPacket } from "./structural-diff";
-import { getTemplateRegistry } from "./template-registry";
+import { validateTemplateRegistryFileData } from "./template-registry";
 import type { Annotation, NormalizedState, PromptPacket } from "./types";
 
 function annotation(
@@ -143,7 +143,7 @@ describe("computeReviewMetrics structural diff integration", () => {
     ]);
   });
 
-  test("emits explicit structural labels in the prompt", () => {
+  test("emits explicit structural labels in the prompt", async () => {
     const original = state("original", [
       annotation("a", 0, 1, "one"),
       annotation("b", 1.2, 2.1, "two"),
@@ -151,8 +151,19 @@ describe("computeReviewMetrics structural diff integration", () => {
     const current = state("current", [annotation("ab", 0, 2.1, "one two")]);
 
     const computed = computeReviewMetrics(original, current, "review-action");
-    const registry = getTemplateRegistry();
-    const prompts = buildPrompts(computed.promptPacket, registry.promptCatalog);
+    const segmentation = validateTemplateRegistryFileData(
+      "segmentation.json",
+      await Bun.file(new URL("./default-templates/segmentation.json", import.meta.url)).json(),
+    );
+    const prompts = buildPrompts(computed.promptPacket, {
+      "Word Accuracy": [],
+      "Timestamp Accuracy": [],
+      "Punctuation & Formatting": [],
+      "Tags & Emphasis": [],
+      Segmentation: segmentation.templates
+        .filter((template) => template.enabled)
+        .map(({ id, description }) => ({ id, description })),
+    });
 
     expect(prompts.userPrompt).toContain("[SEG MERGED]");
     expect(prompts.systemPrompt).toContain("TIMESTAMP SHIFT");

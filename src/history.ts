@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { buildPreparedPayload } from "./service";
 import type { AnalyticsEventType, BabelDiffPayload, NormalizedState } from "./types";
+import { isObject } from "./shared/http";
 
 type HistoryMetricsAnalysis = {
   stats?: Record<string, unknown>;
@@ -59,10 +60,6 @@ export type ReviewHistoryDetail = {
   metricsAnalysis: HistoryMetricsAnalysis;
   reconstructedPrepared: ReturnType<typeof buildPreparedPayload>;
 };
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
 
 function isNormalizedState(value: unknown): value is NormalizedState {
   return (

@@ -1,4 +1,5 @@
 import type { BabelDiffPayload } from "./types";
+import { isObject } from "./shared/http";
 
 type BabelDiffPromptPacket = {
   referenceReviewActionId: string;
@@ -93,10 +94,6 @@ type BabelDiffPromptPacket = {
     }>;
   };
 };
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
 
 function toNumberOrNull(value: unknown): number | null {
   const parsed = Number(value);

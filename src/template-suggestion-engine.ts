@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { requestOpenRouter, parseModelJson } from "./openrouter";
 import { CATEGORIES } from "./rules";
 import { getTemplateRegistry } from "./template-registry";
+import { isObject } from "./shared/http";
 import type {
   CategoryName,
   ReviewSessionCard,
@@ -9,10 +10,6 @@ import type {
   TemplateSuggestionOperation,
   TemplateSuggestionProposal
 } from "./types";
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
 
 function toStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {

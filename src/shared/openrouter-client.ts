@@ -48,9 +48,8 @@ const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 const DEFAULT_OPENROUTER_CHAT_TIMEOUT_MS = 180_000;
 
 let cachedModelIds: Set<string> | null = null;
-let cachedModelIdsAt = 0;
 let cachedModelCapabilities: Map<string, Set<string>> | null = null;
-let cachedModelCapabilitiesAt = 0;
+let cachedModelCatalogAt = 0;
 const MODEL_CACHE_TTL_MS = 5 * 60 * 1000;
 
 export type CreditsSnapshot = {
@@ -435,8 +434,7 @@ async function fetchOpenRouterModelCatalog(options: { forceRefresh?: boolean } =
     !options.forceRefresh &&
     cachedModelIds &&
     cachedModelCapabilities &&
-    now - cachedModelIdsAt < MODEL_CACHE_TTL_MS &&
-    now - cachedModelCapabilitiesAt < MODEL_CACHE_TTL_MS
+    now - cachedModelCatalogAt < MODEL_CACHE_TTL_MS
   ) {
     return {
       modelIds: cachedModelIds,
@@ -489,9 +487,8 @@ async function fetchOpenRouterModelCatalog(options: { forceRefresh?: boolean } =
   }
 
   cachedModelIds = modelIds;
-  cachedModelIdsAt = now;
   cachedModelCapabilities = inputModalitiesByModel;
-  cachedModelCapabilitiesAt = now;
+  cachedModelCatalogAt = now;
   return {
     modelIds,
     inputModalitiesByModel

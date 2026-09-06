@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import type { Elysia } from "elysia";
+import type { AnyElysia, InferContext } from "elysia";
 import {
   buildPreparedPayload,
   createInteractiveReviewSession,
@@ -31,8 +31,6 @@ import {
   isNonEmptyStringArray,
   isObject
 } from "../../shared/http";
-
-type AnyElysia = Elysia<any, any, any, any, any, any, any>;
 
 type PrepareBody = {
   reviewActionId: string;
@@ -97,10 +95,6 @@ function assertPrepareBody(body: unknown): asserts body is PrepareBody {
   if (body.babelDiff !== undefined && body.babelDiff !== null && !isObject(body.babelDiff)) {
     throw new Error("babelDiff must be an object when provided.");
   }
-}
-
-function assertGenerateBody(body: unknown): asserts body is PrepareBody {
-  assertPrepareBody(body);
 }
 
 function assertSubmitTranscriptReviewActionBody(
@@ -249,6 +243,25 @@ function requireHistoryAccess(
   return requireTemplatesLabAccess(authorization, set);
 }
 
+async function submitTranscriptReviewAction({ body, set }: InferContext<AnyElysia>) {
+  try {
+    assertSubmitTranscriptReviewActionBody(body);
+    return await submitTranscriptReviewActionAnalytics({
+      reviewActionId: body.reviewActionId,
+      original: body.original,
+      current: body.current,
+      babelDiff: body.babelDiff ?? null,
+      inputBoxes: body.inputBoxes,
+      aiReview: body.aiReview,
+      metadata: body.metadata
+    });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    set.status = msg.includes("required") || msg.includes("Body") ? 400 : 500;
+    return { error: msg };
+  }
+}
+
 export function registerReviewRoutes(app: AnyElysia): AnyElysia {
   app
     .get("/templates-lab", ({ headers, set }) => {
@@ -289,7 +302,7 @@ export function registerReviewRoutes(app: AnyElysia): AnyElysia {
     })
     .post("/api/review/generate", async ({ body, set }) => {
       try {
-        assertGenerateBody(body);
+        assertPrepareBody(body);
         return await generateFeedback({
           reviewActionId: body.reviewActionId,
           original: body.original,
@@ -330,7 +343,7 @@ export function registerReviewRoutes(app: AnyElysia): AnyElysia {
       try {
         return searchTemplates(
           typeof query.q === "string" ? query.q : "",
-          typeof query.limit === "string" ? Number(query.limit) : Number(query.limit)
+          Number(query.limit)
         );
       } catch (error) {
         const message = getErrorMessage(error);
@@ -585,42 +598,8 @@ export function registerReviewRoutes(app: AnyElysia): AnyElysia {
         return { error: getErrorMessage(error) };
       }
     })
-    .post("/api/trpc/transcriptions.submitTranscriptReviewAction", async ({ body, set }) => {
-      try {
-        assertSubmitTranscriptReviewActionBody(body);
-        return await submitTranscriptReviewActionAnalytics({
-          reviewActionId: body.reviewActionId,
-          original: body.original,
-          current: body.current,
-          babelDiff: body.babelDiff ?? null,
-          inputBoxes: body.inputBoxes,
-          aiReview: body.aiReview,
-          metadata: body.metadata
-        });
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        set.status = msg.includes("required") || msg.includes("Body") ? 400 : 500;
-        return { error: msg };
-      }
-    })
-    .post("/api/analytics/submit-transcript-review-action", async ({ body, set }) => {
-      try {
-        assertSubmitTranscriptReviewActionBody(body);
-        return await submitTranscriptReviewActionAnalytics({
-          reviewActionId: body.reviewActionId,
-          original: body.original,
-          current: body.current,
-          babelDiff: body.babelDiff ?? null,
-          inputBoxes: body.inputBoxes,
-          aiReview: body.aiReview,
-          metadata: body.metadata
-        });
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        set.status = msg.includes("required") || msg.includes("Body") ? 400 : 500;
-        return { error: msg };
-      }
-    });
+    .post("/api/trpc/transcriptions.submitTranscriptReviewAction", submitTranscriptReviewAction)
+    .post("/api/analytics/submit-transcript-review-action", submitTranscriptReviewAction);
 
   return app;
 }

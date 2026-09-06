@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { isObject } from "./shared/http";
 import type {
   CategoryName,
   PendingTemplateProposalQueueItem,
@@ -17,10 +18,6 @@ function withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
     () => undefined
   );
   return next;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 function toStringArray(value: unknown): string[] {

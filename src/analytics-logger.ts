@@ -1,5 +1,6 @@
 import type { AnalyticsEventType, BabelDiffPayload, NormalizedState, PreparedPayload } from "./types";
 import { writeStructuredLog } from "./structured-logger";
+import { isObject } from "./shared/http";
 
 type ReviewAnalyticsLogEntry = {
   logType: "review_analytics";
@@ -27,10 +28,6 @@ type ReviewAnalyticsLogEntry = {
   inputBoxes: Record<string, unknown>;
   metadata: Record<string, unknown>;
 };
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
 
 function stateToText(state: NormalizedState): string {
   if (!Array.isArray(state.annotations) || state.annotations.length === 0) {

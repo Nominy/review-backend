@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { isObject } from "./shared/http";
 import type {
   BabelDiffPayload,
   ChangeEvidence,
@@ -43,10 +44,6 @@ function withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
 
 function sessionPath(directory: string, sessionId: string): string {
   return resolve(directory, `${sessionId}.json`);
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 function asOptionalString(value: unknown): string | undefined {

@@ -1,6 +1,5 @@
 import type { LoadedTemplateRegistry } from "./template-registry";
 import {
-  normalizeContent,
   parseMaybeJson,
   requestOpenRouterChat,
   type OpenRouterMessage
@@ -95,9 +94,7 @@ function validateClassifications(
 }
 
 function parseAndValidate(content: string, registry: LoadedTemplateRegistry) {
-  const parsed = parseModelJson(content);
-  const validated = validateClassifications(parsed, registry);
-  return { parsed, validated };
+  return validateClassifications(parseModelJson(content), registry);
 }
 
 export async function requestOpenRouter(
@@ -133,7 +130,7 @@ export async function sendToOpenRouter(args: SendArgs): Promise<{
   const firstContent = await requestOpenRouter(args.apiKey, args.model, baseMessages);
 
   try {
-    const { validated } = parseAndValidate(firstContent, args.registry);
+    const validated = parseAndValidate(firstContent, args.registry);
     return {
       findings: validated.findings,
       classifications: validated.classifications,
@@ -156,7 +153,7 @@ export async function sendToOpenRouter(args: SendArgs): Promise<{
       { role: "assistant", content: firstContent },
       { role: "user", content: repairInstruction }
     ]);
-    const { validated } = parseAndValidate(repairedContent, args.registry);
+    const validated = parseAndValidate(repairedContent, args.registry);
 
     return {
       findings: validated.findings,
