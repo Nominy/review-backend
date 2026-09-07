@@ -66,6 +66,27 @@ jobs:
           test -n "$SERVER_PASSWORD"
           test -n "$DEPLOY_PATH"
 
+      # The failed 34157378420 run filled the disk before changing the checkout.
+      # Remove only that incomplete copy; live runtime data and older backups stay intact.
+      - name: Recover space from the incomplete deployment backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          SSHPASS="$SERVER_PASSWORD" sshpass -e ssh \
+            -o ConnectTimeout=20 -o StrictHostKeyChecking=accept-new \
+            -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+            "$SERVER_USER@$SERVER_HOST" "DEPLOY_PATH='$DEPLOY_PATH' bash -se" <<'REMOTE'
+          set -euo pipefail
+          test -d "$DEPLOY_PATH/data"
+          failed_backup=/opt/review/backups/review-backend-20260907T195525Z
+          if [ -e "$failed_backup" ]; then
+            test ! -L "$failed_backup"
+            test "$(readlink -f "$failed_backup")" = /opt/review/backups/review-backend-20260907T195525Z
+            rm -rf --one-file-system -- "$failed_backup"
+          fi
+          df -h "$DEPLOY_PATH"
+          REMOTE
+
       - name: Deploy over SSH
         env:
           SSHOPTS: >-
@@ -166,11 +187,19 @@ jobs:
 
           backup_root="/opt/review/backups"
           backup_dir="$backup_root/review-backend-$(date -u +%Y%m%dT%H%M%SZ)"
+          umask 077
           mkdir -p "$backup_dir"
-          [ -f .env.runtime ] && cp -a .env.runtime "$backup_dir/.env.runtime"
-          [ -d data ] && cp -a data "$backup_dir/data"
-          [ -d templates ] && cp -a templates "$backup_dir/templates"
-          log "Backed up runtime data to $backup_dir"
+          backup_paths=()
+          for entry in .env.runtime data templates; do
+            [ ! -e "$entry" ] || backup_paths+=("$entry")
+          done
+          if [ "${#backup_paths[@]}" -gt 0 ]; then
+            # Old deployments restored a directory into itself, creating data/data.
+            # Those old nested copies remain on disk but are not copied again.
+            tar --exclude=data/data --exclude=templates/templates \
+              -czf "$backup_dir/runtime.tar.gz" "${backup_paths[@]}"
+          fi
+          log "Backed up active runtime data to $backup_dir"
 
           if [ -d .git ]; then
             git rev-parse HEAD > .deploy-previous-commit
@@ -181,8 +210,8 @@ jobs:
           git reset --hard "$GIT_COMMIT"
           git clean -fd -e .deploy-previous-commit -e .env.runtime -e data/ -e logs/ -e node_modules/ -e templates/
 
-          [ -d "$backup_dir/data" ] && cp -a "$backup_dir/data" ./data
-          [ -d "$backup_dir/templates" ] && cp -a "$backup_dir/templates" ./templates
+          # Ignored runtime data stays in place across reset/clean; do not restore
+          # directory trees into themselves and create nested duplicate copies.
 
           mkdir -p logs/pm2
           touch .env.runtime
@@ -213,8 +242,8 @@ jobs:
           log "Dependencies installed"
           mkdir -p dist
           tar -xzf .review-lab-dist.tgz -C dist
-          rm .review-lab-dist.tgz
           bun scripts/refresh-review-templates.mjs templates data/templates
+          rm .review-lab-dist.tgz
           log "Installed Lab assets and refreshed known guideline templates"
           '
 
