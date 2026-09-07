@@ -1,0 +1,13 @@
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import { App } from './App';
+import { setScenarioTransport } from './recovered/scenario-client';
+import { archiveTransport } from './recovered/archive-client';
+import './recovered/generated/liveStyles.css';
+import './styles.css';
+import './archive.css';
+document.documentElement.className = 'overscroll-y-none light';
+document.documentElement.style.colorScheme = 'light';
+document.body.className = 'overscroll-y-none overscroll-x-none font-sans antialiased __variable_f367f3';
+setScenarioTransport(archiveTransport);
+createRoot(document.getElementById('root')!).render(<App />);

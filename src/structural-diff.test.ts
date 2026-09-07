@@ -135,8 +135,8 @@ describe("computeReviewMetrics structural diff integration", () => {
     expect(computed.promptPacket.structuralDiff?.timestamp.samples).toHaveLength(1);
     const changes = extractChanges(computed.promptPacket);
     expect(changes.map((change) => change.type)).toContain("TIMESTAMP SHIFT");
-    expect(changes[0]?.description).toContain("start inward");
-    expect(changes[0]?.description).toContain("end outward");
+    expect(changes[0]?.description).toContain("начало внутрь");
+    expect(changes[0]?.description).toContain("конец наружу");
     expect(runDeterministicRules(computed.promptPacket)).toEqual([
       "timestamp_accuracy.nizkiy_precision",
       "timestamp_accuracy.nizkiy_recall",
@@ -167,7 +167,7 @@ describe("computeReviewMetrics structural diff integration", () => {
 
     expect(prompts.userPrompt).toContain("[SEG MERGED]");
     expect(prompts.systemPrompt).toContain("TIMESTAMP SHIFT");
-    expect(prompts.systemPrompt).toContain("SEG ADDED, SEG DELETED, SEG SPLIT, and SEG MERGED");
+    expect(prompts.systemPrompt).toContain("SEG ADDED/DELETED/SPLIT/MERGED");
   });
 
   test("extracts paired same-slot original-only and current-only text samples", () => {

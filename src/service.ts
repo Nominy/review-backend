@@ -1,4 +1,6 @@
 import { computeReviewMetrics } from "./metrics";
+import { effectivePrompt } from './prompt-settings';
+import { composeReviewSystemPrompt } from './guidelines';
 import { buildPrompts } from "./prompt";
 import { sendToOpenRouter } from "./openrouter";
 import { runDeterministicRules } from "./deterministic-rules";
@@ -50,6 +52,8 @@ function buildPreparedPayload(input: {
   );
   const registry = getTemplateRegistry();
   const prompts = buildPrompts(computed.promptPacket, registry.promptCatalog);
+  prompts.systemPrompt = composeReviewSystemPrompt(effectivePrompt('classifier', prompts.systemPrompt));
+  prompts.preview = `SYSTEM:\n${prompts.systemPrompt}\n\nUSER:\n${prompts.userPrompt}`;
 
   return {
     preparedAt: new Date().toISOString(),
@@ -403,7 +407,7 @@ async function computeReviewOutcome(input: {
   original: NormalizedState;
   current: NormalizedState;
   babelDiff?: BabelDiffPayload | null;
-}): Promise<{
+}, apiKey = ''): Promise<{
   prepared: PreparedPayload;
   llm: GenerateResponse["llm"];
   changes: CreateReviewSessionResponse["changes"];
@@ -423,7 +427,7 @@ async function computeReviewOutcome(input: {
 
   if (!config.openRouterTestMode) {
     const llmSelection = await sendToOpenRouter({
-      apiKey: config.openRouterApiKey,
+      apiKey,
       model: config.openRouterModel,
       prompts: prepared.prompts,
       registry: getTemplateRegistry()
@@ -478,7 +482,7 @@ export async function generateFeedback(input: {
   original: NormalizedState;
   current: NormalizedState;
   babelDiff?: BabelDiffPayload | null;
-}): Promise<GenerateResponse> {
+}, apiKey = ''): Promise<GenerateResponse> {
   try {
     await logReviewTextPair({
       reviewActionId: input.reviewActionId,
@@ -493,7 +497,7 @@ export async function generateFeedback(input: {
     );
   }
 
-  const outcome = await computeReviewOutcome(input);
+  const outcome = await computeReviewOutcome(input, apiKey);
   const result: GenerateResponse = {
     prepared: outcome.prepared,
     llm: outcome.llm
@@ -522,8 +526,8 @@ export async function createInteractiveReviewSession(input: {
   original: NormalizedState;
   current: NormalizedState;
   babelDiff?: BabelDiffPayload | null;
-}): Promise<CreateReviewSessionResponse> {
-  const outcome = await computeReviewOutcome(input);
+}, apiKey = ''): Promise<CreateReviewSessionResponse> {
+  const outcome = await computeReviewOutcome(input, apiKey);
   const session = await createStoredReviewSession(config.reviewSessionsDir, {
     reviewActionId: input.reviewActionId,
     original: input.original,
@@ -730,7 +734,7 @@ export async function clearInteractiveReviewSessionCardTemplateMatch(input: {
 
 export async function generateInteractiveTemplateSuggestions(input: {
   sessionId: string;
-}): Promise<CreateReviewSessionResponse> {
+}, apiKey = ''): Promise<CreateReviewSessionResponse> {
   const existing = await getReviewSession(config.reviewSessionsDir, input.sessionId);
   if (!existing) {
     throw new Error("Review session not found.");
@@ -738,7 +742,7 @@ export async function generateInteractiveTemplateSuggestions(input: {
 
   const proposals = await generateTemplateSuggestions({
     session: existing,
-    openRouterApiKey: config.openRouterApiKey,
+    openRouterApiKey: apiKey,
     model: config.openRouterModel,
     testMode: config.openRouterTestMode
   });

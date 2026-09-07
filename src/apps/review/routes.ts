@@ -1,3 +1,6 @@
+import { requestApiKey, keyUsage } from '../../review-key';
+import { reviewGuidelines, CATEGORY_LABELS } from '../../guidelines';
+import { gradingPolicy } from '../grading/policy';
 import { fileURLToPath } from "node:url";
 import type { AnyElysia, InferContext } from "elysia";
 import {
@@ -16,6 +19,9 @@ import {
 import { searchTemplates } from "../../template-search";
 import { getReviewHistoryDetail, listReviewHistory } from "../../history";
 import { config } from "../../config";
+import { getLabTask, listLabTasks, setLabTaskPin } from '../../lab-pins';
+import { labPromptSettings, replayLabTask } from '../../lab-service';
+import { savePromptSettings, validatePromptSettings } from '../../prompt-settings';
 import {
   createTemplateForLab,
   importTemplatesFromCsv,
@@ -263,6 +269,64 @@ async function submitTranscriptReviewAction({ body, set }: InferContext<AnyElysi
 }
 
 export function registerReviewRoutes(app: AnyElysia): AnyElysia {
+  app.get('/api/templates-lab/guidelines', ({ headers, set }) => {
+    const blocked = requireTemplatesLabAccess(headers.authorization, set);
+    return blocked || { ...reviewGuidelines(), grading: gradingPolicy(), categoryLabels: CATEGORY_LABELS };
+  });
+  app.get('/templates-lab/recreation/*', async ({ headers, params, set }) => {
+    const blocked = requireTemplatesLabAccess(headers.authorization, set);
+    if (blocked) return blocked;
+    const asset = params['*'];
+    if (!/^(archive\.html|favicon\.svg|assets\/[a-zA-Z0-9_.-]+)$/.test(asset)) { set.status = 404; return { error: 'Asset not found.' }; }
+    const file = Bun.file(fileURLToPath(new URL('../../../dist/recreation/' + asset, import.meta.url)));
+    if (!(await file.exists())) { set.status = 503; return { error: 'Babel recreation assets are not installed. Run npm run build:lab on the backend checkout.' }; }
+    return file;
+  });
+  app.get('/api/templates-lab/recent', async ({ headers, set }) => {
+    const blocked = requireTemplatesLabAccess(headers.authorization, set);
+    if (blocked) return blocked;
+    try { return await listLabTasks(); }
+    catch (error) { set.status = 500; return { error: getErrorMessage(error) }; }
+  }).post('/api/templates-lab/pin', async ({ headers, body, set }) => {
+    const blocked = requireTemplatesLabAccess(headers.authorization, set);
+    if (blocked) return blocked;
+    try {
+      if (!isObject(body) || typeof body.pinned !== 'boolean' || (body.pinned ? typeof body.historyId !== 'string' : typeof body.reviewActionId !== 'string')) throw new Error('Pin state and task identifier are required.');
+      return await setLabTaskPin(body as { pinned: boolean; historyId?: string; reviewActionId?: string });
+    } catch (error) { set.status = 400; return { error: getErrorMessage(error) }; }
+  }).get('/api/templates-lab/prompts', ({ headers, set }) => {
+    const blocked = requireTemplatesLabAccess(headers.authorization, set);
+    if (blocked) return blocked;
+    try { return labPromptSettings(); }
+    catch (error) { set.status = 500; return { error: getErrorMessage(error) }; }
+  }).post('/api/templates-lab/prompts', ({ headers, body, set }) => {
+    const blocked = requireTemplatesLabAccess(headers.authorization, set);
+    if (blocked) return blocked;
+    try {
+      if (!isObject(body) || typeof body.revision !== 'string') throw new Error('Prompt revision is required.');
+      validatePromptSettings(body.settings);
+      return savePromptSettings(body.settings, body.revision);
+    } catch (error) { set.status = getErrorStatus(error, 400); return { error: getErrorMessage(error) }; }
+  }).post('/api/templates-lab/replay', async ({ headers, body, set }) => {
+    const blocked = requireTemplatesLabAccess(headers.authorization, set);
+    if (blocked) return blocked;
+    try { return await replayLabTask(body, isObject(body) && body.previewOnly === true ? '' : requestApiKey(headers)); }
+    catch (error) { set.status = getErrorStatus(error, 502); return { error: getErrorMessage(error) }; }
+  }).get('/templates-lab/workspace.js', ({ headers, set }) => {
+    const blocked = requireTemplatesLabAccess(headers.authorization, set);
+    return blocked || Bun.file(fileURLToPath(new URL('../../templates-lab/workspace.js', import.meta.url)));
+  });
+  for (const extension of ['css', 'js']) app.get('/templates-lab/shared-ui.' + extension, async ({ headers, set }) => {
+    const blocked = requireTemplatesLabAccess(headers.authorization, set);
+    if (blocked) return blocked;
+    const file = Bun.file(fileURLToPath(new URL('../../../dist/lab-ui.' + extension, import.meta.url)));
+    if (!(await file.exists())) { set.status = 503; return { error: 'Run npm run build:lab to install Review Lab assets.' }; }
+    return file;
+  });
+  app.get('/api/review/key-usage', async ({ headers, set }) => {
+    try { return await keyUsage(headers['x-openrouter-key']); }
+    catch (error) { set.status = 400; return { error: getErrorMessage(error) }; }
+  });
   app
     .get("/templates-lab", ({ headers, set }) => {
       const blocked = requireTemplatesLabAccess(headers.authorization, set);
@@ -300,7 +364,7 @@ export function registerReviewRoutes(app: AnyElysia): AnyElysia {
         return { error: msg };
       }
     })
-    .post("/api/review/generate", async ({ body, set }) => {
+    .post("/api/review/generate", async ({ body, headers, set }) => {
       try {
         assertPrepareBody(body);
         return await generateFeedback({
@@ -308,14 +372,14 @@ export function registerReviewRoutes(app: AnyElysia): AnyElysia {
           original: body.original,
           current: body.current,
           babelDiff: body.babelDiff ?? null
-        });
+        }, requestApiKey(headers));
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         set.status = msg.includes("required") || msg.includes("Body") ? 400 : 500;
         return { error: msg };
       }
     })
-    .post("/api/review/sessions", async ({ body, set }) => {
+    .post("/api/review/sessions", async ({ body, headers, set }) => {
       try {
         assertPrepareBody(body);
         return await createInteractiveReviewSession({
@@ -323,7 +387,7 @@ export function registerReviewRoutes(app: AnyElysia): AnyElysia {
           original: body.original,
           current: body.current,
           babelDiff: body.babelDiff ?? null
-        });
+        }, requestApiKey(headers));
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         set.status = msg.includes("required") || msg.includes("Body") ? 400 : 500;
@@ -395,11 +459,11 @@ export function registerReviewRoutes(app: AnyElysia): AnyElysia {
         return { error: message };
       }
     })
-    .post("/api/review/sessions/:sessionId/template-suggestions", async ({ params, set }) => {
+    .post("/api/review/sessions/:sessionId/template-suggestions", async ({ params, headers, set }) => {
       try {
         return await generateInteractiveTemplateSuggestions({
           sessionId: params.sessionId
-        });
+        }, requestApiKey(headers));
       } catch (error) {
         const message = getErrorMessage(error);
         set.status = message.includes("not found") ? 404 : getErrorStatus(error, 500);
@@ -479,10 +543,7 @@ export function registerReviewRoutes(app: AnyElysia): AnyElysia {
       }
 
       try {
-        return await getReviewHistoryDetail({
-          logPath: config.analyticsLogPath,
-          historyId: params.historyId
-        });
+        return await getLabTask(params.historyId);
       } catch (error) {
         const message = getErrorMessage(error);
         set.status = message.includes("not found") || message.includes("Invalid history ID") ? 404 : 500;

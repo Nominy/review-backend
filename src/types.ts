@@ -23,6 +23,9 @@ export type Annotation = {
 };
 
 export type Recording = {
+  processedRecordingUrl?: string;
+  processedRecordingUri?: string;
+  chunkedProcessedRecordingId?: string;
   id: string;
   transcriptionChunkId: string;
   processedRecordingId: string;
@@ -388,6 +391,7 @@ export type PendingTemplateProposalQueueItem = {
 };
 
 export type AnalyticsEventType =
+  | "review_graded"
   | "review_generate"
   | "submit_transcript_review_action"
   | "review_session_created"

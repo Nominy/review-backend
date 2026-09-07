@@ -8,12 +8,15 @@
     "dev": "bun --no-env-file --watch src/index.ts",
     "start": "bun --no-env-file src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --max-concurrency=1 src/app.test.ts src/structural-diff.test.ts src/shared/*.test.ts src/apps/drafting/*.test.ts && bun test --max-concurrency=1 src/pending-template-proposals.test.ts && bun test --max-concurrency=1 src/config.test.ts",
+    "test": "bun test --max-concurrency=1 src/app.test.ts src/lab.test.ts src/structural-diff.test.ts ./src/shared ./src/apps/drafting ./src/apps/grading && bun test --max-concurrency=1 src/pending-template-proposals.test.ts && bun test --max-concurrency=1 src/config.test.ts",
     "eval:smoke": "bun --no-env-file src/run-smoke-eval.ts",
     "pm2:start": "pm2 start ecosystem.config.cjs",
     "pm2:restart": "pm2 restart ecosystem.config.cjs --update-env",
     "pm2:stop": "pm2 delete babel-review-backend",
-    "pm2:logs": "pm2 logs babel-review-backend"
+    "pm2:logs": "pm2 logs babel-review-backend",
+    "test:lab:browser": "node scripts/lab-browser-check.mjs",
+    "build:lab:ui": "node scripts/build-lab-ui.mjs",
+    "build:lab": "npm run build:lab:ui && node scripts/build-lab-recreation.mjs"
   },
   "dependencies": {
     "@elysiajs/cors": "^1.4.2",

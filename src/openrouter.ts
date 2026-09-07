@@ -141,11 +141,11 @@ export async function sendToOpenRouter(args: SendArgs): Promise<{
     };
   } catch {
     const repairInstruction = [
-      "Return strict JSON only.",
-      "Use exactly this schema: {\"classifications\": [{\"change\": 1, \"templateId\": \"category.template_id\"}]}.",
-      "Each entry maps a change number to a valid template ID from the provided catalog.",
-      "If no changes match, return: {\"classifications\": []}.",
-      "Do not include any explanation or markdown."
+      "Верни только строгий JSON.",
+      "Используй схему: {\"classifications\": [{\"change\": 1, \"templateId\": \"category.template_id\"}]}.",
+      "Каждая запись связывает номер изменения с допустимым идентификатором шаблона из каталога.",
+      "Если подтверждённых совпадений нет, верни: {\"classifications\": []}.",
+      "Не добавляй пояснения или Markdown."
     ].join("\n");
 
     const repairedContent = await requestOpenRouter(args.apiKey, args.model, [

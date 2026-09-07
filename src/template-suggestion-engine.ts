@@ -1,3 +1,4 @@
+import { guidelinesPrompt, REVIEW_DATA_BOUNDARY, REVIEW_INTERPRETATION } from './guidelines';
 import { randomUUID } from "node:crypto";
 import { requestOpenRouter, parseModelJson } from "./openrouter";
 import { CATEGORIES } from "./rules";
@@ -239,15 +240,15 @@ export async function generateTemplateSuggestions(args: {
   }
 
   const systemPrompt = [
-    "You propose transcript-review template improvements.",
-    "Use reviewer comments and explicit manual template selections/removals as learning signal.",
-    "You may propose only these operations: create_template, update_template, disable_template.",
-    "Never propose prompt, rubric, classifier, or threshold changes.",
-    "Return strict JSON only."
+    "Ты предлагаешь улучшения шаблонов замечаний по транскрипции. Заголовки, описания, тексты замечаний и причины пиши по-русски.",
+    "Используй комментарии проверяющего и явный ручной выбор или снятие шаблона как основания для предложения.",
+    "Допустимы только операции create_template, update_template, disable_template. Идентификаторы и ключи JSON сохраняй без перевода.",
+    "Не предлагай менять промпты, шкалу оценивания, классификатор или пороги.",
+    "Верни только строгий JSON.", REVIEW_INTERPRETATION, REVIEW_DATA_BOUNDARY
   ].join("\n");
 
   const userPrompt = [
-    "Review session context:",
+    guidelinesPrompt(), "Контекст проверки:",
     JSON.stringify(
       {
         reviewActionId: args.session.reviewActionId,
@@ -257,18 +258,18 @@ export async function generateTemplateSuggestions(args: {
       2
     ),
     "",
-    "Return JSON with this exact shape:",
+    "Верни JSON строго по схеме:",
     '{"proposals":[{"operation":"create_template","category":"Word Accuracy","targetTemplateId":"optional","title":"...","description":"...","reportTexts":["..."],"reason":"...","sourceCardIds":["change-1"]}]}',
     "",
-    "Rules:",
-    "- Proposals must be actionable and specific.",
-    "- Use only the listed categories.",
-    "- sourceCardIds must reference the card IDs from the session context.",
-    "- Manual matches mean the reviewer explicitly linked that edit to the current template.",
-    "- Manual clears mean the reviewer explicitly rejected the previous template for that edit.",
-    "- Use disable_template only when the manual clear or comment suggests the template leaks across unrelated diffs or is broadly misleading.",
-    "- Otherwise prefer update_template to narrow or clarify the template description/report text.",
-    "- Keep reportTexts concise and user-facing."
+    "Правила:",
+    "- Предложения должны быть конкретными и применимыми.",
+    "- Используй только перечисленные категории с неизменными идентификаторами.",
+    "- sourceCardIds ссылается только на идентификаторы карточек из контекста.",
+    "- Ручной выбор означает, что проверяющий связал исправление с выбранным шаблоном.",
+    "- Ручное снятие означает, что проверяющий отклонил прежний шаблон для этого исправления.",
+    "- disable_template используй только если снятие или комментарий указывают на систематическое ложное применение шаблона к несвязанным правкам.",
+    "- В остальных случаях уточняй область применения или текст с помощью update_template.",
+    "- reportTexts — краткие практические замечания для транскрибатора на русском."
   ].join("\n");
 
   const content = await requestOpenRouter(args.openRouterApiKey, args.model, [

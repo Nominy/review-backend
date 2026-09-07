@@ -93,7 +93,7 @@ describe("config", () => {
 
     const { config } = await importFreshConfig();
 
-    expect(config.openRouterModel).toBe("google/gemini-3-flash-preview");
+    expect(config.openRouterModel).toBe("google/gemini-3.7-flash");
   });
 
   it("uses an explicit larger request body cap for audio drafting uploads", async () => {

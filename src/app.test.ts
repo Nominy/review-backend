@@ -22,20 +22,8 @@ afterEach(() => {
 
 describe("createApp", () => {
   it("serves the health route with backend metadata", async () => {
-    globalThis.fetch = (async () =>
-      new Response(
-        JSON.stringify({
-          data: {
-            total_credits: 10,
-            total_usage: 2,
-            remaining_credits: 8
-          }
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" }
-        }
-      )) as unknown as typeof fetch;
+    let requests = 0;
+    globalThis.fetch = (async () => { requests++; throw new Error('Health must not call OpenRouter'); }) as unknown as typeof fetch;
 
     const response = await createApp().handle(new Request("http://localhost/health"));
     const payload = await response.json();
@@ -44,6 +32,9 @@ describe("createApp", () => {
     expect(payload.ok).toBe(true);
     expect(payload.service).toBe("babel-review-backend");
     expect(payload.backendVersion).toEqual(BACKEND_VERSION);
+    expect(payload.credentialMode).toBe("user-key-required");
+    expect(payload).not.toHaveProperty("openRouterCredits");
+    expect(requests).toBe(0);
   });
 
   it("keeps the review API mounted under the existing namespace", async () => {

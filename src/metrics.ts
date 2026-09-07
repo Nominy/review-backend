@@ -1,3 +1,4 @@
+import { reviewEvidenceAnnotations } from './guidelines';
 import type {
   Annotation,
   BabelDiffPayload,
@@ -9,8 +10,8 @@ import type {
 import { buildStructuralDiffPromptPacket } from "./structural-diff";
 import { alignSegments, diffWords } from "./text-diff";
 
-export const METRICS_VERSION = "v8";
-export const PROMPT_VERSION = "v15";
+export const METRICS_VERSION = "v9";
+export const PROMPT_VERSION = "v16-ru-guidelines";
 
 function normalizeWhitespace(text: string): string {
   return String(text || "").replace(/\s+/g, " ").trim();
@@ -184,8 +185,8 @@ export function computeReviewMetrics(
   promptPacket: PromptPacket;
   metricsVersion: string;
 } {
-  const oldAnnotations = Array.isArray(original.annotations) ? original.annotations : [];
-  const newAnnotations = Array.isArray(current.annotations) ? current.annotations : [];
+  const oldAnnotations = reviewEvidenceAnnotations(Array.isArray(original.annotations) ? original.annotations : []);
+  const newAnnotations = reviewEvidenceAnnotations(Array.isArray(current.annotations) ? current.annotations : []);
   const structuralDiffPacket = buildStructuralDiffPromptPacket(oldAnnotations, newAnnotations);
 
   const oldText = oldAnnotations.map((annotation) => annotation.content || "").join(" ");

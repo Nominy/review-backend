@@ -15,7 +15,6 @@ jobs:
     timeout-minutes: 20
     env:
       DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       SERVER_HOST: ${{ secrets.SERVER_HOST }}
       SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
       SERVER_USER: ${{ secrets.SERVER_USER }}
@@ -28,6 +27,22 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Set up Node.js for Lab assets
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build Review Lab assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ../../shared
+          git clone https://github.com/Nominy/babel-extension-platform.git ../../shared/babel-extension-platform
+          git -C ../../shared/babel-extension-platform checkout ff6854bc99a5ffe3e3a5ec6161fbc8ea9c4f890f
+          npm ci --prefix ../../shared/babel-extension-platform/packages/babel-extension-e2e/fixtures/recreation/app
+          npm run build:lab
+          tar -czf "$RUNNER_TEMP/review-lab-dist.tgz" -C dist .
 
       - name: Install SSH helper
         run: |
@@ -50,7 +65,6 @@ jobs:
           test -n "$SERVER_USER"
           test -n "$SERVER_PASSWORD"
           test -n "$DEPLOY_PATH"
-          test -n "$OPENROUTER_API_KEY"
 
       - name: Deploy over SSH
         env:
@@ -76,7 +90,6 @@ jobs:
             printf '[%s] %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" | tee -a "$deploy_log"
           }
 
-          openrouter_key_b64="$(printf '%s' "$OPENROUTER_API_KEY" | base64 -w0)"
 
           run_remote_step() {
             local step_name="$1"
@@ -105,7 +118,7 @@ jobs:
                 sshpass -e ssh \
                   $SSHOPTS \
                   "$SERVER_USER@$SERVER_HOST" \
-                  "DEPLOY_PATH='$DEPLOY_PATH' OPENROUTER_API_KEY_B64='$openrouter_key_b64' GIT_COMMIT='$GITHUB_SHA' GIT_BRANCH='$GITHUB_REF_NAME' DEPLOY_STEP='$step_name' DEPLOY_LOG_FILE='$remote_log' bash -se" \
+                  "DEPLOY_PATH='$DEPLOY_PATH' GIT_COMMIT='$GITHUB_SHA' GIT_BRANCH='$GITHUB_REF_NAME' DEPLOY_STEP='$step_name' DEPLOY_LOG_FILE='$remote_log' bash -se" \
                   < "$script_path" |& tee -a "$deploy_log"
               status=$?
               set +o pipefail
@@ -148,7 +161,6 @@ jobs:
           : "${DEPLOY_PATH:?DEPLOY_PATH is required}"
           : "${GIT_COMMIT:?GIT_COMMIT is required}"
           : "${GIT_BRANCH:?GIT_BRANCH is required}"
-          : "${OPENROUTER_API_KEY_B64:?OPENROUTER_API_KEY_B64 is required}"
 
           cd "$DEPLOY_PATH"
 
@@ -166,8 +178,8 @@ jobs:
           log "Stored previous deployment commit marker"
 
           git fetch origin main
-          git reset --hard origin/main
-          git clean -fd -e .env.runtime -e data/ -e logs/ -e node_modules/ -e templates/
+          git reset --hard "$GIT_COMMIT"
+          git clean -fd -e .deploy-previous-commit -e .env.runtime -e data/ -e logs/ -e node_modules/ -e templates/
 
           [ -d "$backup_dir/data" ] && cp -a "$backup_dir/data" ./data
           [ -d "$backup_dir/templates" ] && cp -a "$backup_dir/templates" ./templates
@@ -176,8 +188,8 @@ jobs:
           touch .env.runtime
           chmod 600 .env.runtime
           tmp_env="$(mktemp)"
-          awk "!/^(OPENROUTER_API_KEY|GIT_COMMIT|GIT_BRANCH)=/" .env.runtime > "$tmp_env"
-          printf "OPENROUTER_API_KEY=%s\n" "$(printf "%s" "$OPENROUTER_API_KEY_B64" | base64 -d)" >> "$tmp_env"
+          awk "!/^(OPENROUTER_API_KEY|OPENROUTER_MODEL|GIT_COMMIT|GIT_BRANCH)=/" .env.runtime > "$tmp_env"
+          printf "OPENROUTER_MODEL=google/gemini-3.7-flash\n" >> "$tmp_env"
           printf "GIT_COMMIT=%s\n" "$GIT_COMMIT" >> "$tmp_env"
           printf "GIT_BRANCH=%s\n" "$GIT_BRANCH" >> "$tmp_env"
           mv "$tmp_env" .env.runtime
@@ -199,6 +211,11 @@ jobs:
           log "Installing dependencies with bun"
           bun install --frozen-lockfile
           log "Dependencies installed"
+          mkdir -p dist
+          tar -xzf .review-lab-dist.tgz -C dist
+          rm .review-lab-dist.tgz
+          bun scripts/refresh-review-templates.mjs templates data/templates
+          log "Installed Lab assets and refreshed known guideline templates"
           '
 
           service_script='
@@ -281,6 +298,10 @@ jobs:
             log "Deployment prepare step failed"
             exit 1
           fi
+
+          log "Uploading prebuilt Review Lab assets"
+          SSHPASS="$SERVER_PASSWORD" sshpass -e scp $SSHOPTS \
+            "$RUNNER_TEMP/review-lab-dist.tgz" "$SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/.review-lab-dist.tgz"
 
           if ! run_remote_step "install" "$install_script"; then
             log "Dependency installation step failed"

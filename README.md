@@ -47,7 +47,7 @@ bun run dev
 
 Notes:
 - This project loads `.env.runtime` from app code (`src/load-env.ts`) and runs Bun with `--no-env-file` as a workaround for a Bun dotenv crash on some environments.
-- `OPENROUTER_API_KEY` is required when `OPENROUTER_TEST_MODE=false` for review-backend model calls. Gold Drafting requests are BYOK and must include the user's OpenRouter key in the request payload.
+- `OPENROUTER_API_KEY` is not used by review endpoints. All review model requests require a user key in `X-OpenRouter-Key`; missing or invalid keys never fall back to a server credential. `/health` reports service metadata only and does not fetch account credits. Gold Drafting requests are BYOK and must include the user's OpenRouter key in the request payload.
 - `OPENROUTER_MODEL` is optional (defaults to `openai/gpt-oss-120b`) and is used as the Gold Drafting default when the extension does not select a model.
 - `OPENROUTER_TEST_MODE` is optional (`false` by default). Set `true` to skip OpenRouter and return deterministic default template-backed feedback.
 - `ANALYTICS_LOG_PATH` is optional (defaults to `logs/pm2/review-backend.out.log`) and is used by the history API to read structured logs captured by the process manager.

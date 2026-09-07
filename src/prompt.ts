@@ -1,3 +1,4 @@
+import { guidelinesPrompt, REVIEW_DATA_BOUNDARY, REVIEW_INTERPRETATION, CATEGORY_LABELS } from './guidelines';
 import { extractChanges, getRelevantCategories } from "./change-extractor";
 import type { Change, PromptPacket, TemplatePromptCatalog } from "./types";
 
@@ -13,38 +14,24 @@ import type { Change, PromptPacket, TemplatePromptCatalog } from "./types";
 
 const RESPONSE_SCHEMA = '{"classifications": [{"change": 1, "templateId": "category.template_id"}]}';
 
-function buildSystemPrompt(): string {
+export function buildSystemPrompt(): string {
   return [
-    "You are a transcript issue classifier for Babel Audio.",
-    "You receive a numbered list of changes between two transcript versions.",
-    "For each change, decide if it matches an issue template from the catalog.",
-    "",
-    "Rules:",
-    "1. Only use template IDs from the provided catalog. Do not invent IDs.",
-    "2. A change may match zero or one template. Skip changes that match nothing.",
-    "3. Multiple changes may map to the same template; that is fine.",
-    "4. Treat the change label as authoritative structure.",
-    "5. TEXT CHANGE lines are for word, punctuation, formatting, and tag mistakes visible in the text diff.",
-    "6. TIMESTAMP SHIFT lines are only for 1:1 boundary movement on an otherwise matched segment.",
-    "7. SEG ADDED, SEG DELETED, SEG SPLIT, and SEG MERGED lines are structural segmentation events.",
-    "8. For text changes, choose the most specific template that explains the edit.",
-    "9. Do not return a broad generic template when a specific one already explains it.",
-    "10. Generic punctuation templates are fallback-only; do not combine them with",
-    "    dedicated tag/service-markup templates unless there is separate independent",
-    "    punctuation evidence.",
-    "11. Treat inline tags/service markup as part of the diff text itself.",
-    "",
-    "Output rules:",
-    "- Return strict JSON only. No markdown. No prose outside JSON.",
-    "- Use exactly this schema:",
+    "Ты проверяешь ошибки транскрипции Babel Audio и сопоставляешь обоснованные замечания с каталогом шаблонов.",
+    "Исходная версия — работа L1; исправленная — версия L2. Версия L2 считается эталоном.",
+    REVIEW_INTERPRETATION,
+    "Структурные типы изменений — технические метки: TEXT CHANGE — текст; TIMESTAMP SHIFT — границы устойчивого сегмента 1:1; SEG ADDED/DELETED/SPLIT/MERGED — добавление, удаление, разбиение или объединение.",
+    "Используй только идентификаторы из каталога. На одну правку выбирай не более одного наиболее точного шаблона. Один шаблон может объяснять несколько правок. Не добавляй общее замечание, если ту же ошибку уже объясняет специальное.",
+    "Пропускай служебные действия без штрафа по руководству и правки, для которых нет подходящего шаблона. Не переоценивай правильность L2.",
+    REVIEW_DATA_BOUNDARY,
+    "Верни только строгий JSON без Markdown и пояснений вне JSON по схеме:",
     RESPONSE_SCHEMA,
-    '- If no changes match any template, return: {"classifications": []}',
+    'Если замечаний нет, верни {"classifications": []}.'
   ].join("\n");
 }
 
 function formatChangeList(changes: Change[]): string {
   if (changes.length === 0) {
-    return "(no changes detected)";
+    return "(изменений нет)";
   }
 
   return changes
@@ -67,11 +54,11 @@ function buildScopedCatalog(
     if (!templates || templates.length === 0) continue;
 
     const lines = templates.map((t) => `  - ${t.id}: ${t.description}`);
-    sections.push(`${category}:\n${lines.join("\n")}`);
+    sections.push(`${CATEGORY_LABELS[category]} (${category}):\n${lines.join("\n")}`);
   }
 
   if (sections.length === 0) {
-    return "(no relevant templates)";
+    return "(подходящих шаблонов нет)";
   }
 
   return sections.join("\n\n");
@@ -82,13 +69,14 @@ function buildUserPrompt(
   fullCatalog: TemplatePromptCatalog
 ): string {
   return [
-    "Classify each change against the matching template from the catalog below.",
+    "Сопоставь каждое исправление L2 с подходящим шаблоном из каталога.",
     "",
-    "Changes:",
+    "Изменения:",
     formatChangeList(changes),
     "",
-    "Template catalog:",
+    "Каталог шаблонов:",
     buildScopedCatalog(changes, fullCatalog),
+    "", guidelinesPrompt(), REVIEW_DATA_BOUNDARY,
   ].join("\n");
 }
 
@@ -107,6 +95,6 @@ export function buildPrompts(
   return {
     systemPrompt,
     userPrompt,
-    preview: `SYSTEM:\n${systemPrompt}\n\nUSER:\n${userPrompt}`,
+    preview: `СИСТЕМНЫЕ ИНСТРУКЦИИ:\n${systemPrompt}\n\nДАННЫЕ ПРОВЕРКИ:\n${userPrompt}`,
   };
 }

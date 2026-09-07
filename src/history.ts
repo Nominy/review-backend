@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 import { buildPreparedPayload } from "./service";
 import type { AnalyticsEventType, BabelDiffPayload, NormalizedState } from "./types";
 import { isObject } from "./shared/http";
+import { extractChanges } from './change-extractor';
+import { archiveTextDiff } from './archive-diff';
 
 type HistoryMetricsAnalysis = {
   stats?: Record<string, unknown>;
@@ -59,6 +61,8 @@ export type ReviewHistoryDetail = {
   metadata: Record<string, unknown>;
   metricsAnalysis: HistoryMetricsAnalysis;
   reconstructedPrepared: ReturnType<typeof buildPreparedPayload>;
+  changes: ReturnType<typeof extractChanges>;
+  textDiff: ReturnType<typeof archiveTextDiff>;
 };
 
 function isNormalizedState(value: unknown): value is NormalizedState {
@@ -75,6 +79,7 @@ function toEventType(value: unknown): AnalyticsEventType | null {
   const normalized = typeof value === "string" ? value : "";
   switch (normalized) {
     case "review_generate":
+    case "review_graded":
     case "submit_transcript_review_action":
     case "review_session_created":
     case "review_session_opened":
@@ -199,9 +204,13 @@ export async function listReviewHistory(input: {
   reviewActionId?: string;
   eventType?: AnalyticsEventType | "";
   query?: string;
+  checkedOnly?: boolean;
+  distinctTasks?: boolean;
+  excludeActionIds?: string[];
 }): Promise<{ items: ReviewHistorySummary[]; total: number }> {
   const lines = await readHistoryLines(input.logPath);
   const summaries: ReviewHistorySummary[] = [];
+  const seen = new Set<string>();
   const normalizedReviewActionId = String(input.reviewActionId || "").trim().toLowerCase();
   const normalizedQuery = String(input.query || "").trim().toLowerCase();
   const limit = Math.max(1, Math.min(200, Number(input.limit) || 50));
@@ -213,6 +222,9 @@ export async function listReviewHistory(input: {
       continue;
     }
     const reviewActionId = String(entry.reviewActionId || "");
+    if (input.excludeActionIds?.includes(reviewActionId)) continue;
+    if (input.checkedOnly && !['review_generate', 'review_graded', 'interactive_review_applied', 'submit_transcript_review_action'].includes(entry.eventType || '')) continue;
+    if (input.distinctTasks && seen.has(reviewActionId)) continue;
     if (input.eventType && entry.eventType !== input.eventType) {
       continue;
     }
@@ -236,6 +248,7 @@ export async function listReviewHistory(input: {
       }
     }
 
+    seen.add(reviewActionId);
     summaries.push(summarizeEntry(entry, lineNumber));
     if (summaries.length >= limit) {
       break;
@@ -273,6 +286,8 @@ export async function getReviewHistoryDetail(input: {
     aiReview: entry.aiReview ?? null,
     metadata: entry.metadata || {},
     metricsAnalysis: entry.metricsAnalysis || {},
+    textDiff: archiveTextDiff(entry.original, entry.current),
+    changes: extractChanges(buildPreparedPayload({ reviewActionId: entry.reviewActionId, original: entry.original, current: entry.current, babelDiff: entry.babelDiff }).promptPacket),
     reconstructedPrepared: buildPreparedPayload({
       reviewActionId: entry.reviewActionId,
       original: entry.original,

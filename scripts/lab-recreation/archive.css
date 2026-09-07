@@ -1,0 +1,3 @@
+/* The captured player waits for audio forever when no tracks were archived.
+   Hide only that unavailable player region; the native transcript workbench remains intact. */
+html[data-archive-audio="missing"] .recovered-babel-root div:has(> .backdrop-blur-sm) { display: none; }

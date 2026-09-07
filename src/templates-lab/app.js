@@ -486,7 +486,8 @@
         ? payload.pendingSuggestions
         : [];
       sortDraftTemplates();
-      els.registryVersion.textContent = payload.registryVersion || "-";
+      els.registryVersion.textContent = state.categories.reduce((total, group) => total + group.templates.length, 0) + " templates";
+      els.registryVersion.title = payload.registryVersion || "";
       renderCategoryOptions();
       renderPendingSuggestions();
       syncDirtyWithPendingSuggestions();
@@ -1188,5 +1189,6 @@
   els.templateList.addEventListener("click", onListClick);
   updateDraftControls();
   resetCreateForm();
+  window.templatesLab = { getDraft: () => structuredClone(state.categories), isDirty: () => state.dirty };
   refreshTemplates().catch(handleError);
 })();

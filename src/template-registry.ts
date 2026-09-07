@@ -27,6 +27,7 @@ export type TemplateRegistryDiskSnapshot = Array<
 >;
 
 const TEMPLATE_DIR = fileURLToPath(new URL("../templates/", import.meta.url));
+const templateDirectory = () => process.env.TEMPLATE_REGISTRY_DIR || TEMPLATE_DIR;
 const DEFAULT_TEMPLATE_DIR = fileURLToPath(new URL("./default-templates/", import.meta.url));
 
 const CATEGORY_FILE_NAMES: Record<CategoryName, string> = {
@@ -180,20 +181,20 @@ function sortTemplates(left: ReviewTemplate, right: ReviewTemplate): number {
 
 export function getTemplateFilePath(category: CategoryName): string {
   ensureTemplateDirectory();
-  return join(TEMPLATE_DIR, CATEGORY_FILE_NAMES[category]);
+  return join(templateDirectory(), CATEGORY_FILE_NAMES[category]);
 }
 
 function ensureTemplateDirectory(): void {
-  if (existsSync(TEMPLATE_DIR)) {
+  if (existsSync(templateDirectory())) {
     return;
   }
-  mkdirSync(TEMPLATE_DIR, { recursive: true });
-  cpSync(DEFAULT_TEMPLATE_DIR, TEMPLATE_DIR, { recursive: true });
+  mkdirSync(templateDirectory(), { recursive: true });
+  cpSync(DEFAULT_TEMPLATE_DIR, templateDirectory(), { recursive: true });
 }
 
 export function readTemplateRegistryFiles(): TemplateRegistryDiskSnapshot {
   ensureTemplateDirectory();
-  const templateFiles = readdirSync(TEMPLATE_DIR, { withFileTypes: true })
+  const templateFiles = readdirSync(templateDirectory(), { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
     .map((entry) => entry.name)
     .sort((a, b) => a.localeCompare(b));
@@ -201,12 +202,12 @@ export function readTemplateRegistryFiles(): TemplateRegistryDiskSnapshot {
   const files: TemplateRegistryDiskSnapshot = [];
 
   for (const fileName of templateFiles) {
-    const raw = readFileSync(join(TEMPLATE_DIR, fileName), "utf8");
+    const raw = readFileSync(join(templateDirectory(), fileName), "utf8");
     const parsed = parseRegistryFile(fileName, raw);
     files.push({
       ...parsed,
       fileName,
-      filePath: join(TEMPLATE_DIR, fileName)
+      filePath: join(templateDirectory(), fileName)
     });
   }
 
@@ -214,7 +215,10 @@ export function readTemplateRegistryFiles(): TemplateRegistryDiskSnapshot {
 }
 
 function loadTemplateRegistry(): LoadedTemplateRegistry {
-  const templateFiles = readTemplateRegistryFiles();
+  return buildTemplateRegistry(readTemplateRegistryFiles());
+}
+
+export function buildTemplateRegistry(templateFiles: TemplateRegistryFile[]): LoadedTemplateRegistry {
   const templatesById = new Map<string, ReviewTemplate>();
   const templatesByCategory = createCategoryRecord<ReviewTemplate[]>(() => []);
   const defaultTextByCategory = createCategoryRecord<string>(() => "");

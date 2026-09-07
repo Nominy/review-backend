@@ -2,8 +2,7 @@ import {
   booleanEnv,
   loadDefaultEnvFiles,
   optionalEnv,
-  parseCorsOriginEnv,
-  requireEnv
+  parseCorsOriginEnv
 } from "./shared/env";
 
 loadDefaultEnvFiles();
@@ -29,8 +28,8 @@ export const config = {
   port,
   maxRequestBodySize: positiveIntegerEnv("DRAFT_MAX_REQUEST_BODY_MB", DEFAULT_MAX_REQUEST_BODY_MB) * 1024 * 1024,
   openRouterTestMode,
-  openRouterApiKey: openRouterTestMode ? optionalEnv("OPENROUTER_API_KEY", "") : requireEnv("OPENROUTER_API_KEY"),
-  openRouterModel: optionalEnv("OPENROUTER_MODEL", "google/gemini-3-flash-preview"),
+  openRouterApiKey: optionalEnv("OPENROUTER_API_KEY", ""),
+  openRouterModel: optionalEnv("OPENROUTER_MODEL", "google/gemini-3.7-flash"),
   localEngineBaseUrl: optionalEnv("LOCAL_ENGINE_BASE_URL", "http://127.0.0.1:8767"),
   localEngineEnabled: booleanEnv("LOCAL_ENGINE_ENABLED", false),
   analyticsLogPath: optionalEnv("ANALYTICS_LOG_PATH", "logs/pm2/review-backend.out.log"),

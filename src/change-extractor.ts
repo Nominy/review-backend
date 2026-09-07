@@ -66,8 +66,8 @@ function summarizeTimestampShift(sample: {
   if (sample.endShiftMs !== 0) {
     shifts.push(formatTimestampEdgeShift("end", sample.endShiftMs));
   }
-  const shiftSummary = shifts.length > 0 ? shifts.join(", ") : `avg ${sample.avgShiftMs}ms`;
-  return `Timing shift (${shiftSummary}, ${sample.quality} confidence)`;
+  const shiftSummary = shifts.length > 0 ? shifts.join(", ") : `средний ${sample.avgShiftMs} мс`;
+  return `Сдвиг таймкода (${shiftSummary}, ${sample.quality} — уверенность сопоставления)`;
 }
 
 function toSegmentationChangeType(relationship: string): ChangeType {
@@ -97,12 +97,12 @@ function getTimestampShiftDirection(
 }
 
 function getTimestampShiftMeaning(direction: "inward" | "outward"): string {
-  return direction === "inward" ? "likely removed silence" : "likely restored cut speech";
+  return direction === "inward" ? "L2 сузил границу" : "L2 расширил границу";
 }
 
 function formatTimestampEdgeShift(edge: "start" | "end", deltaMs: number): string {
   const direction = getTimestampShiftDirection(edge, deltaMs);
-  return `${edge} ${direction} (${deltaMs > 0 ? "+" : ""}${deltaMs}ms, ${getTimestampShiftMeaning(direction)})`;
+  return `${edge === "start" ? "начало" : "конец"} ${direction === "inward" ? "внутрь" : "наружу"} (${deltaMs > 0 ? "+" : ""}${deltaMs} мс, ${getTimestampShiftMeaning(direction)})`;
 }
 
 type LocalTextSample = PromptPacket["localTextEvidence"]["originalOnlySamples"][number];
@@ -223,8 +223,8 @@ function extractTimestampChanges(packet: PromptPacket): Change[] {
     const shifts: string[] = [];
     if (sample.startShiftMs !== 0) shifts.push(formatTimestampEdgeShift("start", sample.startShiftMs));
     if (sample.endShiftMs !== 0) shifts.push(formatTimestampEdgeShift("end", sample.endShiftMs));
-    const shiftDesc = shifts.length > 0 ? shifts.join(", ") : `avg ${sample.avgShiftMs}ms`;
-    const desc = `Timing shift (${shiftDesc}) [${sample.quality}]: "${escapeQuotes(sample.refText)}"`;
+    const shiftDesc = shifts.length > 0 ? shifts.join(", ") : `средний ${sample.avgShiftMs} мс`;
+    const desc = `Сдвиг таймкода (${shiftDesc}) [${sample.quality}]: "${escapeQuotes(sample.refText)}"`;
 
     changes.push({
       index: 0,
@@ -256,18 +256,18 @@ function extractSegmentationChanges(packet: PromptPacket): Change[] {
 
     const refText = sample.referenceText
       ? `"${escapeQuotes(sample.referenceText)}"`
-      : "(empty)";
+      : "(пусто)";
     const hypText = sample.hypothesisText
       ? `"${escapeQuotes(sample.hypothesisText)}"`
-      : "(empty)";
+      : "(пусто)";
 
     const tokenChanges: string[] = [];
-    if (sample.substitutions > 0) tokenChanges.push(`${sample.substitutions} sub`);
-    if (sample.insertions > 0) tokenChanges.push(`${sample.insertions} ins`);
-    if (sample.deletions > 0) tokenChanges.push(`${sample.deletions} del`);
+    if (sample.substitutions > 0) tokenChanges.push(`${sample.substitutions} замен`);
+    if (sample.insertions > 0) tokenChanges.push(`${sample.insertions} добавлений`);
+    if (sample.deletions > 0) tokenChanges.push(`${sample.deletions} удалений`);
     const tokenSuffix = tokenChanges.length > 0 ? ` (${tokenChanges.join(", ")})` : "";
     const type = toSegmentationChangeType(relationship);
-    const desc = `${type} [${severity}] ref=${refCount}->hyp=${hypCount}${tokenSuffix}: ${refText} -> ${hypText}`;
+    const desc = `${type} [${severity}] L1=${refCount}->L2=${hypCount}${tokenSuffix}: ${refText} -> ${hypText}`;
 
     changes.push({
       index: 0,
