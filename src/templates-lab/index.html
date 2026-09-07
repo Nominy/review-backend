@@ -3,40 +3,34 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Babel Review Lab</title>
+  <title>Babel · Template Lab</title>
   <link id="babel-shared-components-style" rel="stylesheet" href="/templates-lab/shared-ui.css">
   <link rel="stylesheet" href="/templates-lab/styles.css">
 </head>
 <body class="bui-root bui-page" data-bui-accent="orange">
   <div class="shell">
-    <header class="hero">
-      <div>
-        <p class="eyebrow">Internal Admin</p>
-        <h1>Review Lab</h1>
-        <p class="sub">Revisit recent reviews. Compare transcript changes, tune model prompts, and maintain your template library.</p>
-      </div>
-      <div class="hero-meta">
-        <div class="meta-card">
-          <span class="meta-label">Saved library</span>
-          <strong id="registryVersion">-</strong>
-        </div>
-        <button id="saveDraftBtn" type="button">Save Draft</button>
-        <button id="discardDraftBtn" type="button" class="secondary">Discard Draft</button>
-        <button id="refreshBtn" type="button" class="secondary">Refresh</button>
-        <button type="button" class="secondary" data-open-guidelines>Rules &amp; grading guide</button>
-      </div>
+    <header class="app-bar">
+      <a class="brand" href="#dashboard" aria-label="Babel Template Lab dashboard"><span class="brand-mark" aria-hidden="true">b.</span><span>Babel <span class="brand-divider">/</span> <strong>Template Lab</strong></span></a>
+      <nav class="section-tabs" aria-label="Lab sections"><button type="button" class="secondary" data-section="dashboard" aria-current="page">Dashboard</button><button type="button" class="secondary" data-section="templates">Templates</button></nav>
+      <div class="app-actions"><button type="button" class="secondary quiet-button" data-open-guidelines>Rules &amp; guide</button><button type="button" class="secondary quiet-button" data-open-settings><span aria-hidden="true">⚙</span> Settings</button></div>
     </header>
-
-    <section class="panel recent-panel" aria-labelledby="recentTitle">
-      <div class="panel-head"><div><p class="eyebrow">Your review workspace</p><h2 id="recentTitle">Last 10 checked tasks</h2></div><button type="button" id="reloadRecent" class="secondary">Refresh tasks</button></div>
-      <p class="panel-sub">Latest unpinned tasks with generated feedback, grades, or a completed review. Pin a task to hold it outside the queue.</p>
-      <section id="pinnedSection" hidden><h3>Pinned tasks</h3><p class="panel-sub">Held outside the queue until you unpin them.</p><div id="pinnedTasks" class="recent-tasks"></div><h3>Recent queue</h3></section>
+    <main class="page-content">
+    <section id="dashboardSection" class="dashboard-section" aria-labelledby="recentTitle">
+      <div class="page-heading"><div><p class="eyebrow">Your workspace</p><h1 id="recentTitle">Pick up where you left off.</h1><p class="sub">Open a task, explore the review, and make the next version better.</p></div><button type="button" id="reloadRecent" class="secondary">↻ <span>Refresh tasks</span></button></div>
+      <section id="pinnedSection" hidden><div class="section-heading"><h2>Pinned tasks</h2><span>Kept here for your next iteration</span></div><div id="pinnedTasks" class="recent-tasks pinned-tasks"></div></section>
+      <div class="section-heading"><h2>Recent tasks <span class="count-badge" id="recentCount">10</span></h2><span>Your last 10 checked tasks</span></div>
       <p id="taskListStatus" role="status"></p>
-      <div id="recentTasks" class="recent-tasks" aria-live="polite">Loading recent reviews…</div>
+      <div class="task-table-head" aria-hidden="true"><span>Task</span><span>Last activity</span><span></span></div>
+      <div id="recentTasks" class="recent-tasks" aria-live="polite"><p class="loading-state">Loading recent tasks…</p></div>
+      <p class="dashboard-footnote"><span class="status-dot" aria-hidden="true"></span> A space to experiment. Your changes go live only when you publish.</p>
     </section>
+    <section id="templatesSection" hidden aria-label="Template library">
+    <div class="page-heading"><div><p class="eyebrow">The building blocks</p><h1>Template library</h1><p class="sub">Shape the feedback your team uses. Stage a version, then publish when it’s ready.</p></div></div>
     <section id="templateWorkbench">
+    <div class="template-toolbar"><div><span class="eyebrow">Library version <strong id="registryVersion">—</strong></span><span id="templateStageState" role="status">Published version</span></div><div class="form-actions"><button id="discardDraftBtn" type="button" class="secondary">Reset changes</button><button id="stageDraftBtn" type="button" class="secondary">Stage changes</button><button id="saveDraftBtn" type="button">Publish templates</button></div></div>
     <section class="status-panel">
       <div class="status" id="status">Loading templates...</div>
+      <details class="library-tools"><summary>Library tools</summary><div class="library-tools-body"><button id="refreshBtn" type="button" class="secondary">Reload published library</button>
       <div class="import-row">
         <input id="csvFile" type="file" accept=".csv,text/csv">
         <label class="compact-toggle">
@@ -50,9 +44,10 @@
         <button id="importBtn" type="button">Import CSV</button>
         <button id="exportBtn" type="button" class="secondary">Export CSV</button>
       </div>
+      </div></details>
     </section>
 
-    <main class="layout">
+    <div class="layout">
       <section class="panel">
         <div class="panel-head">
           <h2>Templates</h2>
@@ -147,36 +142,41 @@
           </div>
         </form>
       </section>
-    </main>
+    </div>
 
-    <section class="panel pending-panel">
+    <details class="panel pending-panel"><summary>Pending suggestions</summary>
       <div class="panel-head">
         <div>
-          <h2>Pending Suggestions</h2>
-          <p class="panel-sub">Approved reviewer suggestions land here as draft-only items. Apply any of them into the current local draft before saving.</p>
+          <p class="panel-sub">Review suggestions and apply them to your working draft.</p>
         </div>
       </div>
       <div id="pendingSuggestions" class="pending-list"></div>
+    </details>
     </section>
     </section>
+    </main>
   </div>
 
   <dialog id="reviewWorkspace" aria-labelledby="workspaceTitle">
-    <header class="workspace-header"><div><span class="eyebrow">Babel / Review Lab</span><h2 id="workspaceTitle">Archived review</h2><span id="workspaceMeta"></span></div><button type="button" class="secondary" id="closeWorkspace">Close workspace</button></header>
-    <nav class="workspace-tabs" aria-label="Review workspace"><button type="button" data-view="native">Babel editor</button><button type="button" data-view="transcript">Transcript</button><button type="button" data-view="diff">Diff view</button><button type="button" data-view="templates">Templates</button><button type="button" class="secondary" data-open-guidelines>Rules &amp; grading guide</button></nav>
-    <div class="workspace-body"><section id="archivePane" class="archive-pane"><div id="nativeArchive" hidden><p id="nativeAudioNotice" class="archive-notice">Babel recreation · Archived task, read-only.</p><iframe id="babelArchiveFrame" title="Babel archived task recreation"></iframe></div><div id="archiveContent"></div><div id="overlayTemplates" hidden><div class="tuning-actions"><button type="button" id="overlaySaveTemplates">Save template draft</button><button type="button" id="overlayDiscardTemplates" class="secondary">Discard template draft</button></div></div></section>
-    <aside class="tuning-pane">
-      <div class="panel-head"><h2>Model prompt</h2><span id="labModel" class="panel-sub"></span></div>
-      <label>Workflow<select id="promptKind"><option value="classifier">Review Helper · template matching</option><option value="grader">Review Grader · scores</option></select></label>
-      <label class="prompt-label">System instructions<textarea id="systemPrompt" spellcheck="false" placeholder="Loading prompt…"></textarea></label>
-      <div class="tuning-actions"><button type="button" id="previewPrompt" class="secondary">Inspect full prompt</button><button type="button" id="runReplay">Test on this task</button></div>
-      <div class="tuning-actions"><button type="button" id="resetPrompt" class="secondary">Use default</button><button type="button" id="reloadPrompts" class="secondary">Reload saved prompts</button><button type="button" id="savePrompts">Save prompts for future reviews</button></div>
-      <p id="promptStatus" role="status">Tests use the current prompt and template drafts. They do not change the archived review.</p>
-      <details id="promptPreview"><summary>Full model input</summary><pre id="promptPreviewText"></pre></details>
-      <section class="result-section"><h3>Test result</h3><div id="replayResult">Run a test to compare your changes.</div></section>
-      <details class="result-section" open><summary>Saved review result</summary><div id="savedResult"></div></details>
-    </aside></div>
+    <header class="workspace-header"><button type="button" class="secondary quiet-button" id="closeWorkspace">← Dashboard</button><div class="workspace-identity"><span class="eyebrow">Task workspace</span><h2 id="workspaceTitle">Loading task…</h2><span id="workspaceMeta"></span></div><div class="workspace-header-actions"><button type="button" class="secondary quiet-button" data-open-settings>Settings</button><button type="button" id="toggleReview" aria-expanded="false" aria-controls="reviewStudio">Review studio <span aria-hidden="true">◧</span></button></div></header>
+    <nav class="workspace-tabs" aria-label="Review workspace"><div class="editor-tabs"><button type="button" class="secondary" data-view="native">Babel editor</button><button type="button" class="secondary" data-view="transcript">Transcript</button><button type="button" class="secondary" data-view="diff">Diff view</button><button type="button" class="secondary" data-view="templates">Templates</button></div><div class="layout-controls"><label class="sr-only" for="layoutPreset">Workspace layout</label><select id="layoutPreset" title="Workspace layout"><option value="focus">Focus</option><option value="review">Review</option><option value="compare">Compare responses</option></select><button type="button" id="resetLayout" class="secondary quiet-button" title="Restore default panel positions and sizes">Reset layout</button></div></nav>
+    <div id="workspaceBody" class="workspace-body"><section id="archivePane" class="archive-pane"><div id="nativeArchive" hidden><p id="nativeAudioNotice" class="archive-notice">Babel recreation · Archived task, read-only.</p><iframe id="babelArchiveFrame" title="Babel archived task recreation"></iframe></div><div id="archiveContent"></div><div id="overlayTemplates" hidden><div hidden><button type="button" id="overlaySaveTemplates">Stage templates</button><button type="button" id="overlayDiscardTemplates">Reset templates</button></div></div></section>
+    <aside id="reviewStudio" class="tuning-pane" aria-label="Review studio" hidden>
+      <div id="studioResize" class="studio-resize" role="separator" tabindex="0" aria-label="Resize review studio" aria-orientation="vertical" aria-valuemin="360" aria-valuemax="900" aria-valuenow="520"></div>
+      <header class="studio-heading"><div><p class="eyebrow">Make the next version better</p><h2>Review studio</h2></div><button id="closeReview" type="button" class="secondary icon-button" aria-label="Close review studio">✕</button></header>
+      <div class="studio-workflow"><label for="promptKind">Extension</label><select id="promptKind"><option value="classifier">Review Helper · template matching</option><option value="grader">Review Grader · scores</option></select><span id="labModel" class="panel-sub"></span></div>
+      <div class="dock-instruction"><span>Drag panels to arrange your workspace</span><span aria-hidden="true">⠿</span></div>
+      <div id="reviewDock" class="review-windows">
+        <section class="studio-window" data-window-id="prompts" aria-label="Model prompt panel"><header class="window-handle"><span class="window-title"><span class="window-number">01</span> Model prompt</span><div class="window-actions"></div></header><div class="window-content"><label class="prompt-label" for="systemPrompt">System instructions</label><textarea id="systemPrompt" spellcheck="false" placeholder="Loading prompt…"></textarea><div class="tuning-actions"><button type="button" id="resetPrompt" class="secondary quiet-button">Use default</button><button type="button" id="reloadPrompts" class="secondary quiet-button">Reload published</button></div></div></section>
+        <section class="studio-window" data-window-id="context" aria-label="Composed context panel"><header class="window-handle"><span class="window-title"><span class="window-number">02</span> Composed context</span><div class="window-actions"></div></header><div class="window-content"><p class="panel-sub">The exact prompt and task instructions sent to the model.</p><details id="promptPreview" open><summary>Full model input</summary><pre id="promptPreviewText">Open a task to preview its context.</pre></details><button type="button" id="previewPrompt" class="secondary quiet-button">↻ Refresh context</button></div></section>
+        <section class="studio-window" data-window-id="published" aria-label="Original response panel"><header class="window-handle"><span class="window-title"><span class="window-number">03</span> Original response</span><div class="window-actions"></div></header><div class="window-content"><div class="response-label"><span class="status-dot"></span> Captured with this task</div><div id="savedResult"></div></div></section>
+        <section class="studio-window tuned-window" data-window-id="tuned" aria-label="Tuned response panel"><header class="window-handle"><span class="window-title"><span class="window-number">04</span> Tuned response</span><div class="window-actions"></div></header><div class="window-content"><div class="response-label"><span class="status-dot draft-dot"></span> Your experiment</div><div id="replayResult" aria-live="polite">Run your prompt to see what changes.</div></div></section>
+      </div>
+      <footer class="studio-footer"><button type="button" id="runReplay" title="Run tuned version (Ctrl+Enter)">▶ Run tuned version</button><div class="stage-line"><span id="promptStageState" role="status">Published prompts</span><span>Private until published</span></div><div class="stage-actions"><button type="button" id="stagePrompts" class="secondary">Stage prompts</button><button type="button" id="savePrompts">Publish prompts</button></div><p id="promptStatus" role="status">Stage keeps your iteration in this browser. Publish activates it for everyone.</p></footer>
+    </aside><div id="layoutAnnouncement" class="sr-only" role="status" aria-live="polite"></div></div>
   </dialog>
+
+  <dialog id="labSettingsDialog" aria-labelledby="labSettingsTitle"><header class="workspace-header"><div><p class="eyebrow">Template Lab</p><h2 id="labSettingsTitle">Settings</h2></div><button type="button" id="closeLabSettings" class="secondary icon-button" aria-label="Close settings">✕</button></header><div class="settings-body"><div><h3>Model connection</h3><p class="panel-sub">Manage your OpenRouter key and usage through Review Helper.</p></div><div id="labSettingsKeyHost"></div><p id="labKeyUnavailable" class="empty-state">Install or reload the updated Review Helper extension, then refresh this page to manage your key.</p><div class="settings-note"><h3>Your workspace</h3><p>Staged prompts, staged templates, and panel layouts are saved in this browser. Publishing updates the shared version used by the extensions.</p></div></div></dialog>
 
   <dialog id="guidelinesDialog" aria-labelledby="guidelinesTitle">
     <header class="workspace-header"><div><h2 id="guidelinesTitle">Rules &amp; grading guide</h2><p id="guidelinesVersion" class="panel-sub"></p></div><button type="button" class="secondary" id="closeGuidelines">Close guide</button></header>
@@ -186,6 +186,7 @@
 
   <script type="module" src="/templates-lab/shared-ui.js"></script>
   <script src="/templates-lab/app.js"></script>
+  <script src="/templates-lab/layout.js"></script>
   <script src="/templates-lab/workspace.js"></script>
 </body>
 </html>

@@ -315,6 +315,9 @@ export function registerReviewRoutes(app: AnyElysia): AnyElysia {
   }).get('/templates-lab/workspace.js', ({ headers, set }) => {
     const blocked = requireTemplatesLabAccess(headers.authorization, set);
     return blocked || Bun.file(fileURLToPath(new URL('../../templates-lab/workspace.js', import.meta.url)));
+  }).get('/templates-lab/layout.js', ({ headers, set }) => {
+    const blocked = requireTemplatesLabAccess(headers.authorization, set);
+    return blocked || Bun.file(fileURLToPath(new URL('../../templates-lab/layout.js', import.meta.url)));
   });
   for (const extension of ['css', 'js']) app.get('/templates-lab/shared-ui.' + extension, async ({ headers, set }) => {
     const blocked = requireTemplatesLabAccess(headers.authorization, set);

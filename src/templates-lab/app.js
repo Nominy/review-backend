@@ -5,8 +5,17 @@
     categories: [],
     pendingSuggestions: [],
     selectedId: null,
-    dirty: false
+    dirty: false,
+    formDirty: false,
+    publishedCategories: [],
+    registryVersion: "",
+    staged: null,
+    stageConflict: false,
+    busy: false,
+    loading: false
   };
+
+  const stageStorageKey = "babel.templates-lab.staged-templates.v1";
 
   const categoryPrefixes = {
     "Word Accuracy": "word_accuracy",
@@ -56,6 +65,8 @@
     registryVersion: document.getElementById("registryVersion"),
     status: document.getElementById("status"),
     saveDraftBtn: document.getElementById("saveDraftBtn"),
+    stageDraftBtn: document.getElementById("stageDraftBtn"),
+    templateStageState: document.getElementById("templateStageState"),
     discardDraftBtn: document.getElementById("discardDraftBtn"),
     refreshBtn: document.getElementById("refreshBtn"),
     csvFile: document.getElementById("csvFile"),
@@ -272,14 +283,40 @@
   }
 
   function updateDraftControls() {
-    const dirty = !!state.dirty;
-    els.saveDraftBtn.disabled = !dirty;
-    els.discardDraftBtn.disabled = !dirty;
+    const unavailable = state.busy || state.loading;
+    els.saveDraftBtn.disabled = unavailable || !state.staged || state.dirty || state.formDirty || state.stageConflict;
+    els.saveDraftBtn.textContent = state.busy ? "Publishing…" : "Publish staged templates";
+    els.discardDraftBtn.disabled = unavailable || (!state.dirty && !state.formDirty);
+    els.refreshBtn.disabled = unavailable;
+    els.importBtn.disabled = unavailable;
+    els.newTemplateBtn.disabled = unavailable;
+    els.createForm.inert = unavailable;
+    els.editForm.inert = unavailable;
+    if (els.stageDraftBtn) {
+      els.stageDraftBtn.disabled = unavailable || (!state.dirty && !state.formDirty);
+    }
+    if (els.templateStageState) {
+      els.templateStageState.textContent = state.stageConflict
+        ? "Published version changed · reload to resolve"
+        : state.formDirty
+          ? "Temporary template edits · not staged"
+          : state.dirty
+            ? "Temporary changes · not staged"
+            : state.staged
+              ? "Staged in this browser · ready to publish"
+              : "Published templates";
+      els.templateStageState.dataset.state = state.stageConflict ? "conflict" : state.formDirty || state.dirty ? "draft" : state.staged ? "staged" : "published";
+    }
+  }
+
+  function notifyDraftChange() {
+    window.dispatchEvent(new Event("templates-lab-draft-change"));
   }
 
   function markDirty() {
     state.dirty = true;
     updateDraftControls();
+    notifyDraftChange();
   }
 
   function clearDirty() {
@@ -296,14 +333,17 @@
   }
 
   function setCreateMode() {
+    state.formDirty = false;
     state.selectedId = null;
     els.editorTitle.textContent = "Create Template";
     els.createForm.classList.remove("hidden");
     els.editForm.classList.add("hidden");
     renderList();
+    updateDraftControls();
   }
 
   function setEditMode(template) {
+    state.formDirty = false;
     state.selectedId = template.id;
     els.editorTitle.textContent = "Edit Template";
     els.createForm.classList.add("hidden");
@@ -316,15 +356,18 @@
     renderVariantList(els.editReportTexts, template.reportTexts);
     els.editEnabled.checked = !!template.enabled;
     renderList();
+    updateDraftControls();
   }
 
   function resetCreateForm() {
+    state.formDirty = false;
     els.createForm.reset();
     if (els.createCategory.options.length) {
       els.createCategory.selectedIndex = 0;
     }
     buildIdPreview();
     renderVariantList(els.createReportTexts, [""]);
+    updateDraftControls();
   }
 
   function renderCategoryOptions() {
@@ -399,7 +442,7 @@
       .map((template) => {
         const isActive = template.id === state.selectedId;
         return [
-          '<article class="list-item' + (isActive ? " active" : "") + '" data-id="' + escapeHtml(template.id) + '">',
+          '<article class="list-item' + (isActive ? " active" : "") + '" data-id="' + escapeHtml(template.id) + '" role="button" tabindex="0" aria-pressed="' + isActive + '" aria-label="Edit template: ' + escapeHtml(template.title) + '">',
           '<div class="list-item-head">',
           '<div class="list-item-title">' + escapeHtml(template.title) + "</div>",
           '<span class="pill ' + (template.enabled ? "enabled" : "disabled") + '">',
@@ -435,7 +478,7 @@
             escapeHtml((proposal.category || "Unknown") + " | " + (proposal.operation || "pending")) +
             "</div>",
           "</div>",
-          '<span class="decision-state">Pending until saved</span>',
+          '<span class="decision-state">Pending publication</span>',
           "</div>",
           '<div class="pending-item-desc">' + escapeHtml(proposal.description || "") + "</div>",
           '<div class="pending-item-reason">' + escapeHtml(proposal.reason || "") + "</div>",
@@ -462,35 +505,20 @@
     }
 
     if (!response.ok) {
-      throw new Error(payload && payload.error ? payload.error : "HTTP " + response.status);
+      const error = new Error(payload && payload.error ? payload.error : "HTTP " + response.status);
+      error.status = response.status;
+      throw error;
     }
 
     return payload;
   }
 
-  async function refreshTemplates(options) {
-    const force = !!(options && options.force);
-    if (state.dirty && !force) {
-      const shouldDiscard = window.confirm(
-        "Discard unsaved draft changes and reload templates from disk?"
-      );
-      if (!shouldDiscard) {
-        return false;
-      }
-    }
-
-      setStatus("Loading templates...", false);
-      const payload = await request("/api/templates-lab/templates");
-      state.categories = cloneCategories(payload.categories);
-      state.pendingSuggestions = Array.isArray(payload.pendingSuggestions)
-        ? payload.pendingSuggestions
-        : [];
-      sortDraftTemplates();
-      els.registryVersion.textContent = state.categories.reduce((total, group) => total + group.templates.length, 0) + " templates";
-      els.registryVersion.title = payload.registryVersion || "";
-      renderCategoryOptions();
-      renderPendingSuggestions();
-      syncDirtyWithPendingSuggestions();
+  function renderDraft() {
+    sortDraftTemplates();
+    els.registryVersion.textContent = state.categories.reduce((total, group) => total + group.templates.length, 0) + " templates";
+    els.registryVersion.title = state.registryVersion;
+    renderCategoryOptions();
+    renderPendingSuggestions();
     if (state.selectedId) {
       const selected = getTemplateById(state.selectedId);
       if (selected) {
@@ -507,15 +535,100 @@
         setCreateMode();
       }
     } else {
+      resetCreateForm();
       setCreateMode();
     }
-    setStatus(
-      state.pendingSuggestions.length
-        ? "Templates loaded. Approved suggestions are staged locally and will clear after save."
-        : "Templates loaded.",
-      false
-    );
-    return true;
+    updateDraftControls();
+    notifyDraftChange();
+  }
+
+  function readStage() {
+    const raw = window.localStorage.getItem(stageStorageKey);
+    if (!raw) return null;
+    const saved = JSON.parse(raw);
+    if (!saved || saved.schemaVersion !== 1 || typeof saved.registryVersion !== "string" || !Array.isArray(saved.categories) || !saved.categories.length || saved.categories.some((group) => !group || typeof group.category !== "string" || !Number.isInteger(group.fileVersion) || !Array.isArray(group.templates))) {
+      throw new Error("The saved template stage could not be restored. Reload published templates to start again.");
+    }
+    return { ...saved, categories: cloneCategories(saved.categories) };
+  }
+
+  function revisionsMatch(staged, published) {
+    return staged.registryVersion === state.registryVersion &&
+      staged.categories.length === published.length &&
+      staged.categories.every((group) => published.some((live) => live.category === group.category && live.fileVersion === group.fileVersion));
+  }
+
+  function stageDraft() {
+    if (state.busy || state.loading) return;
+    applyVisibleForm();
+    if (!state.dirty) return;
+    const staged = {
+      schemaVersion: 1,
+      registryVersion: state.staged ? state.staged.registryVersion : state.registryVersion,
+      categories: cloneCategories(state.categories),
+      savedAt: new Date().toISOString()
+    };
+    // Keep the old base revision on conflicts: staging must never silently rebase a publish.
+    window.localStorage.setItem(stageStorageKey, JSON.stringify(staged));
+    state.staged = staged;
+    clearDirty();
+    setStatus(state.stageConflict
+      ? "Saved your stage in this browser. Published templates have changed; export your draft before reloading published templates to resolve the conflict."
+      : "Templates staged in this browser. Use them for iteration, then publish when ready.", state.stageConflict);
+    notifyDraftChange();
+  }
+
+  async function refreshTemplates(options) {
+    const force = !!(options && options.force);
+    const restoreStage = !!(options && options.restoreStage);
+    if (state.loading || (state.busy && !force)) return false;
+    if ((state.dirty || state.formDirty || state.staged) && !force && !restoreStage) {
+      if (!window.confirm("Discard temporary edits and the locally staged templates, then load the published version? Export your draft first if you want to keep a copy.")) return false;
+    }
+
+    state.loading = true;
+    updateDraftControls();
+    setStatus("Loading templates…", false);
+    try {
+      const payload = await request("/api/templates-lab/templates");
+      state.categories = cloneCategories(payload.categories);
+      state.publishedCategories = cloneCategories(payload.categories);
+      state.registryVersion = payload.registryVersion || "";
+      state.pendingSuggestions = Array.isArray(payload.pendingSuggestions) ? payload.pendingSuggestions : [];
+      state.staged = null;
+      state.stageConflict = false;
+      state.formDirty = false;
+      syncDirtyWithPendingSuggestions();
+      let restoreError = null;
+      if (restoreStage) {
+        try {
+          state.staged = readStage();
+        } catch (error) {
+          restoreError = error;
+        }
+        if (state.staged) {
+          state.stageConflict = !revisionsMatch(state.staged, state.publishedCategories);
+          state.categories = cloneCategories(state.staged.categories);
+          clearDirty();
+        }
+      } else {
+        try {
+          window.localStorage.removeItem(stageStorageKey);
+        } catch (_) {
+          restoreError = new Error("Published templates loaded, but this browser could not clear the previous local stage.");
+        }
+      }
+      renderDraft();
+      setStatus(restoreError ? restoreError.message
+        : state.stageConflict ? "Your staged templates are restored for iteration, but the published version has changed. Export your draft before reloading published templates to resolve the conflict."
+          : state.staged ? "Restored your staged templates. They are local to this browser until you publish."
+            : state.pendingSuggestions.length ? "Published templates loaded with approved suggestions in the temporary draft. Stage them before publishing."
+              : "Published templates loaded. Changes stay temporary until you stage them.", !!restoreError || state.stageConflict);
+      return true;
+    } finally {
+      state.loading = false;
+      updateDraftControls();
+    }
   }
 
   function getNextPriority(group) {
@@ -651,9 +764,12 @@
       throw new Error("Unknown category: " + nextCategory);
     }
 
-    found.template.title = assertNonEmpty(els.editName.value, "Name");
-    found.template.description = assertNonEmpty(els.editDescription.value, "Error description");
-    found.template.reportTexts = collectVariantTexts(els.editReportTexts, "Template text variants");
+    const title = assertNonEmpty(els.editName.value, "Name");
+    const description = assertNonEmpty(els.editDescription.value, "Error description");
+    const reportTexts = collectVariantTexts(els.editReportTexts, "Template text variants");
+    found.template.title = title;
+    found.template.description = description;
+    found.template.reportTexts = reportTexts;
     found.template.enabled = !!els.editEnabled.checked;
 
     if (found.group.category !== nextCategory) {
@@ -694,7 +810,7 @@
     }
 
     const shouldDelete = window.confirm(
-      'Remove template "' + found.template.title + '" from the draft? It will be deleted on save.'
+      'Remove template "' + found.template.title + '" from the draft? The deletion takes effect for everyone after you stage and publish.'
     );
     if (!shouldDelete) {
       return;
@@ -704,7 +820,7 @@
     markDirty();
     resetCreateForm();
     setCreateMode();
-    setStatus("Marked template " + id + " for deletion. Save the draft to persist it.", false);
+    setStatus("Removed template " + id + " from the temporary draft. Stage and publish to make this change live.", false);
   }
 
   function parseCsv(text) {
@@ -859,7 +975,7 @@
 
     if (overwriteRegistry) {
       const confirmed = window.confirm(
-        "Replace the current draft with templates from this CSV? Categories missing from the CSV will become empty after save."
+        "Replace the current draft with templates from this CSV? Categories missing from the CSV will become empty after publication."
       );
       if (!confirmed) {
         return;
@@ -1012,75 +1128,78 @@
   }
 
   async function saveDraft() {
-    if (!state.dirty) {
-      setStatus("No draft changes to save.", false);
+    if (state.busy || state.loading) return;
+    if (!state.staged || state.dirty || state.formDirty) {
+      setStatus("Stage your current template changes before publishing.", true);
+      return;
+    }
+    if (state.stageConflict) {
+      setStatus("Published templates have changed. Export your draft, then reload the published version before publishing new changes.", true);
       return;
     }
 
-    setStatus("Saving draft to JSON...", false);
-    const payload = await request("/api/templates-lab/save", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        categories: state.categories.map((group) => ({
-          category: group.category,
-          fileVersion: group.fileVersion,
-          defaultText: group.defaultText,
-          templates: group.templates.map((template) => ({
-            id: template.id,
-            title: template.title,
-            description: template.description,
-            reportTexts: template.reportTexts,
-            priority: template.priority,
-            enabled: !!template.enabled
-          }))
-        }))
-      })
-    });
-
-    await refreshTemplates({ force: true });
-    const touchedCategories = payload && Array.isArray(payload.touchedCategories)
-      ? payload.touchedCategories
-      : [];
-    const clearedPendingCount = payload && Number.isFinite(payload.clearedPendingCount)
-      ? Number(payload.clearedPendingCount)
-      : 0;
-
-    if (touchedCategories.length) {
-      setStatus(
-        "Saved draft to JSON. Updated " +
-          touchedCategories.join(", ") +
-          (clearedPendingCount
-            ? ". Cleared " + clearedPendingCount + " pending suggestion" + (clearedPendingCount === 1 ? "" : "s") + "."
-            : "."),
-        false
-      );
-      return;
+    state.busy = true;
+    updateDraftControls();
+    setStatus("Publishing staged templates…", false);
+    try {
+      const payload = await request("/api/templates-lab/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // Submit the saved snapshot with its original file versions, never a newer working draft.
+        body: JSON.stringify({ categories: cloneCategories(state.staged.categories) })
+      });
+      state.staged = null;
+      try { window.localStorage.removeItem(stageStorageKey); } catch (_) { /* The live publish succeeded. */ }
+      await refreshTemplates({ force: true });
+      const touchedCategories = payload && Array.isArray(payload.touchedCategories) ? payload.touchedCategories : [];
+      const clearedPendingCount = payload && Number.isFinite(payload.clearedPendingCount) ? Number(payload.clearedPendingCount) : 0;
+      setStatus(touchedCategories.length
+        ? "Templates published for everyone. Updated " + touchedCategories.join(", ") + "." + (clearedPendingCount ? " Cleared " + clearedPendingCount + " pending suggestions." : "")
+        : clearedPendingCount ? "Published templates are current. Cleared " + clearedPendingCount + " pending suggestions."
+          : "Your staged templates already match the published version.", false);
+    } catch (error) {
+      if (error.status === 409) {
+        state.stageConflict = true;
+        setStatus("Publication stopped because the published templates changed. Your local stage is safe. Export the draft, then reload published templates to resolve the conflict.", true);
+      } else {
+        throw error;
+      }
+    } finally {
+      state.busy = false;
+      updateDraftControls();
     }
-    if (clearedPendingCount) {
-      setStatus(
-        "Draft already matched disk. Cleared " +
-          clearedPendingCount +
-          " pending suggestion" +
-          (clearedPendingCount === 1 ? "" : "s") +
-          ".",
-        false
-      );
-      return;
-    }
-    setStatus("Draft already matched disk. Nothing changed.", false);
   }
 
   async function discardDraft() {
-    if (!state.dirty) {
-      setStatus("No draft changes to discard.", false);
+    if (state.busy || state.loading) return;
+    if (!state.dirty && !state.formDirty) {
+      setStatus("No temporary changes to reset.", false);
       return;
     }
+    state.categories = cloneCategories(state.staged ? state.staged.categories : state.publishedCategories);
+    state.formDirty = false;
+    if (state.staged) clearDirty();
+    else syncDirtyWithPendingSuggestions();
+    renderDraft();
+    setStatus(state.staged ? "Temporary changes reset to your staged templates." : "Temporary changes reset to the loaded published templates and any approved suggestions.", false);
+  }
 
-    await refreshTemplates({ force: true });
-    setStatus("Discarded unsaved draft changes.", false);
+  function applyVisibleForm() {
+    if (!state.formDirty) return;
+    const event = { preventDefault() {} };
+    if (state.selectedId) applyEditToDraft(event);
+    else addTemplateToDraft(event);
+  }
+
+  function preserveFormBeforeNavigation() {
+    if (state.busy || state.loading) return false;
+    try {
+      applyVisibleForm();
+      return true;
+    } catch (error) {
+      setStatus((error instanceof Error ? error.message : String(error)) + " Finish this template, or use Reset changes to discard it before switching.", true);
+      return false;
+    }
   }
 
   function onListClick(event) {
@@ -1089,6 +1208,8 @@
       return;
     }
     const id = target.getAttribute("data-id");
+    if (id === state.selectedId || !getTemplateById(id)) return;
+    if (!preserveFormBeforeNavigation()) return;
     const found = getTemplateById(id);
     if (found) {
       setEditMode({
@@ -1100,6 +1221,10 @@
         priority: found.template.priority,
         enabled: found.template.enabled
       });
+      if (event.type === "keydown") {
+        const selectedCard = Array.from(els.templateList.querySelectorAll(".list-item")).find((card) => card.getAttribute("data-id") === id);
+        if (selectedCard) selectedCard.focus({ preventScroll: true });
+      }
     }
   }
 
@@ -1122,6 +1247,12 @@
 
     row.remove();
     renumberVariantRows(container);
+    markFormDirty();
+  }
+
+  function markFormDirty() {
+    state.formDirty = true;
+    updateDraftControls();
   }
 
   function handleError(error) {
@@ -1131,6 +1262,11 @@
   els.saveDraftBtn.addEventListener("click", function () {
     saveDraft().catch(handleError);
   });
+  if (els.stageDraftBtn) {
+    els.stageDraftBtn.addEventListener("click", function () {
+      try { stageDraft(); } catch (error) { handleError(error); }
+    });
+  }
   els.discardDraftBtn.addEventListener("click", function () {
     discardDraft().catch(handleError);
   });
@@ -1150,6 +1286,7 @@
   els.categoryFilter.addEventListener("change", renderList);
   els.searchInput.addEventListener("input", renderList);
   els.newTemplateBtn.addEventListener("click", function () {
+    if (!preserveFormBeforeNavigation()) return;
     resetCreateForm();
     setCreateMode();
   });
@@ -1160,9 +1297,11 @@
   });
   els.createAddVariantBtn.addEventListener("click", function () {
     addVariantRow(els.createReportTexts, "");
+    markFormDirty();
   });
   els.editAddVariantBtn.addEventListener("click", function () {
     addVariantRow(els.editReportTexts, "");
+    markFormDirty();
   });
   els.createForm.addEventListener("submit", function (event) {
     try {
@@ -1182,13 +1321,34 @@
     deleteSelectedTemplate();
   });
   els.editCancelBtn.addEventListener("click", function () {
-    setCreateMode();
+    if (state.busy || state.loading) return;
+    if (state.formDirty && !window.confirm("Discard the unapplied edits to this template? Changes already applied to your draft will be kept.")) return;
+    const found = getTemplateById(state.selectedId);
+    if (found) {
+      setEditMode({ category: found.group.category, ...found.template });
+      setStatus("Template form reset to the current draft. Other draft changes are kept.", false);
+    }
   });
   els.createReportTexts.addEventListener("click", onVariantListClick);
   els.editReportTexts.addEventListener("click", onVariantListClick);
+  [els.createForm, els.editForm].forEach((form) => {
+    form.addEventListener("input", markFormDirty);
+    form.addEventListener("change", markFormDirty);
+  });
   els.templateList.addEventListener("click", onListClick);
+  els.templateList.addEventListener("keydown", function (event) {
+    if ((event.key === "Enter" || event.key === " ") && event.target.closest(".list-item")) {
+      event.preventDefault();
+      onListClick(event);
+    }
+  });
   updateDraftControls();
   resetCreateForm();
-  window.templatesLab = { getDraft: () => structuredClone(state.categories), isDirty: () => state.dirty };
-  refreshTemplates().catch(handleError);
+  window.templatesLab = {
+    getDraft: () => cloneCategories(state.categories),
+    isDirty: () => state.dirty || state.formDirty,
+    getStage: () => state.staged ? structuredClone(state.staged) : null,
+    stage: stageDraft
+  };
+  refreshTemplates({ restoreStage: true }).catch(handleError);
 })();

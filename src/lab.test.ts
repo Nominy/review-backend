@@ -71,6 +71,9 @@ it('protects recent history, prompt mutation and replay with Lab authentication'
     const response = await app.handle(new Request(`http://localhost/api/templates-lab/${path}`, { method }));
     expect(response.status).toBe(401);
   }
+  for (const asset of ['workspace.js', 'layout.js']) {
+    expect((await app.handle(new Request(`http://localhost/templates-lab/${asset}`))).status).toBe(401);
+  }
   const response = await app.handle(new Request('http://localhost/api/templates-lab/recent', { headers: { Authorization: `Basic ${btoa('lab:test')}` } }));
   expect(response.status).toBe(200);
   expect((await response.json()).items).toHaveLength(1);
