@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { buildPreparedPayload } from "./service";
 import type { AnalyticsEventType, BabelDiffPayload, NormalizedState } from "./types";
-import { isObject } from "./shared/http";
+import { isObject } from "../../shared/http";
 import { extractChanges } from './change-extractor';
 import { archiveTextDiff } from './archive-diff';
 

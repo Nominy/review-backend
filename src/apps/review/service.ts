@@ -1,10 +1,10 @@
 import { computeReviewMetrics } from "./metrics";
-import { effectivePrompt } from './prompt-settings';
-import { composeReviewSystemPrompt } from './guidelines';
+import { effectivePrompt } from "../../shared/prompt-settings";
+import { composeReviewSystemPrompt } from "../../shared/guidelines";
 import { buildPrompts } from "./prompt";
 import { sendToOpenRouter } from "./openrouter";
 import { runDeterministicRules } from "./deterministic-rules";
-import { config } from "./config";
+import { config } from "../../config";
 import { logReviewTextPair } from "./review-pair-logger";
 import { logReviewAnalytics } from "./analytics-logger";
 import { getTemplateRegistry } from "./template-registry";
@@ -19,7 +19,7 @@ import { renderFeedbackFromTemplateMatches, renderTemplateOpinionText } from "./
 import { extractChanges } from "./change-extractor";
 import { generateTemplateSuggestions } from "./template-suggestion-engine";
 import { CATEGORIES } from "./rules";
-import { BACKEND_VERSION } from "./version";
+import { BACKEND_VERSION } from "../../version";
 import type {
   AnalyticsEventType,
   BabelDiffPayload,

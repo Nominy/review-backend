@@ -1,5 +1,5 @@
 import type { NormalizedState } from "./types";
-import { writeStructuredLog } from "./structured-logger";
+import { writeStructuredLog } from "../../shared/structured-logger";
 
 type ReviewPairLogEntry = {
   logType: "review_pair";

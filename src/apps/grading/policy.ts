@@ -1,4 +1,4 @@
-import type { CategoryName, EditSeverity } from './legacy/types';
+import type { CategoryName, EditSeverity } from "./types";
 
 export const GRADING_THRESHOLDS = {
   'Word Accuracy': { repeated: 2, systemic: 5, basis: 'count' },

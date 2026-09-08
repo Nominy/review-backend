@@ -1,9 +1,9 @@
-import { guidelinesPrompt, REVIEW_DATA_BOUNDARY, REVIEW_INTERPRETATION } from './guidelines';
+import { guidelinesPrompt, REVIEW_DATA_BOUNDARY, REVIEW_INTERPRETATION } from "../../shared/guidelines";
 import { randomUUID } from "node:crypto";
 import { requestOpenRouter, parseModelJson } from "./openrouter";
 import { CATEGORIES } from "./rules";
 import { getTemplateRegistry } from "./template-registry";
-import { isObject } from "./shared/http";
+import { isObject } from "../../shared/http";
 import type {
   CategoryName,
   ReviewSessionCard,

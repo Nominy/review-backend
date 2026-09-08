@@ -1,4 +1,4 @@
-import { applyComponent, themeRoot } from '@babel/shared-ui';
+import { applyComponent, themeRoot } from '@nominy/babel-extension-frontend/components';
 import './guidelines.js';
 themeRoot(document.body, 'orange');
 const mappings = [

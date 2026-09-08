@@ -5,7 +5,7 @@ import { computeReviewMetrics } from "./metrics";
 import { sendToOpenRouter } from "./openrouter";
 import { runDeterministicRules } from "./deterministic-rules";
 import { getTemplateRegistry } from "./template-registry";
-import { loadDefaultEnvFiles, loadEnvFile } from "./load-env";
+import { loadDefaultEnvFiles, loadEnvFile } from "../../shared/env";
 import type { Annotation, NormalizedState } from "./types";
 
 type EvalSegment = {

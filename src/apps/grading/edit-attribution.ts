@@ -1,4 +1,4 @@
-import { TIMING_THRESHOLDS } from '../policy';
+import { TIMING_THRESHOLDS } from "./policy";
 import type { Annotation, CategoryName, EditSeverity, PromptSample } from "./types";
 
 export type EditAtom = {

@@ -1,7 +1,7 @@
 import { CATEGORIES } from "./rules";
 import type { PromptPacket } from "./types";
-import { guidelinesPrompt, REVIEW_DATA_BOUNDARY, REVIEW_INTERPRETATION } from '../../../guidelines';
-import { gradingPolicy } from '../policy';
+import { guidelinesPrompt, REVIEW_DATA_BOUNDARY, REVIEW_INTERPRETATION } from "../../shared/guidelines";
+import { gradingPolicy } from "./policy";
 
 export function buildPrompts(promptPacket: PromptPacket) {
   const schema = { feedback: CATEGORIES.map(category => ({ category, score: 1, note: "Краткое пояснение по-русски" })) };

@@ -1,17 +1,6 @@
 import type { CategoryName, Change, ChangeType, PromptPacket } from "./types";
 
-/**
- * Transforms a PromptPacket into a flat, numbered Change[] list.
- *
- * Each change is a discrete, human-readable line the LLM classifies
- * one-by-one. Change types determine which template catalog sections
- * are included in the scoped prompt.
- *
- * Change type -> relevant categories mapping:
- *   TEXT CHANGE     -> Word Accuracy, Punctuation & Formatting, Tags & Emphasis
- *   TIMESTAMP SHIFT -> Timestamp Accuracy
- *   SEG *           -> Segmentation
- */
+// Change types scope the template catalog included in each classification prompt.
 
 export const CHANGE_TYPE_CATEGORIES: Record<ChangeType, CategoryName[]> = {
   "TEXT CHANGE": ["Word Accuracy", "Punctuation & Formatting", "Tags & Emphasis"],

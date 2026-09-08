@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from 'bun:test';
-import { keyUsage, requestApiKey } from '../review-key';
+import { keyUsage, requestApiKey } from "./review-key";
 import { config } from '../config';
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });

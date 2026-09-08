@@ -3,7 +3,7 @@ import {
   parseMaybeJson,
   requestOpenRouterChat,
   type OpenRouterMessage
-} from "./shared/openrouter-client";
+} from "../../shared/openrouter-client";
 import type { ReviewClassification, TemplateSelectionResponse } from "./types";
 
 type SendArgs = {

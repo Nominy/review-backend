@@ -1,4 +1,4 @@
-import { reviewEvidenceAnnotations } from './guidelines';
+import { reviewEvidenceAnnotations } from "../../shared/guidelines";
 import type {
   Annotation,
   BabelDiffPayload,

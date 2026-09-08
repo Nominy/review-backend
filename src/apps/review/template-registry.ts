@@ -2,7 +2,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:f
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CATEGORIES } from "./rules";
-import { isObject } from "./shared/http";
+import { isObject } from "../../shared/http";
 import type {
   CategoryName,
   ReviewTemplate,
@@ -26,7 +26,7 @@ export type TemplateRegistryDiskSnapshot = Array<
   }
 >;
 
-const TEMPLATE_DIR = fileURLToPath(new URL("../templates/", import.meta.url));
+const TEMPLATE_DIR = fileURLToPath(new URL("../../../templates/", import.meta.url));
 const templateDirectory = () => process.env.TEMPLATE_REGISTRY_DIR || TEMPLATE_DIR;
 const DEFAULT_TEMPLATE_DIR = fileURLToPath(new URL("./default-templates/", import.meta.url));
 

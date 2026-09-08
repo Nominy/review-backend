@@ -1,5 +1,5 @@
-import { reviewEvidenceAnnotations } from '../../../guidelines';
-import { buildScoreCap } from '../policy';
+import { reviewEvidenceAnnotations } from "../../shared/guidelines";
+import { buildScoreCap } from "./policy";
 import { classifyStablePair, toPromptSample, type EditAtom } from "./edit-attribution";
 import type { Annotation, CategoryName, NormalizedState, PromptCategoryEvidence, PromptPacket } from "./types";
 

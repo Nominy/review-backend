@@ -1,18 +1,18 @@
-import { config } from './config';
+import { config } from "../../config";
 import { getLabTask } from './lab-pins';
-import { readPromptSettings } from './prompt-settings';
+import { readPromptSettings } from "../../shared/prompt-settings";
 import { buildSystemPrompt, buildPrompts } from './prompt';
 import { computeReviewMetrics } from './metrics';
-import { computeReviewMetrics as gradingMetrics } from './apps/grading/legacy/metrics';
-import { buildPrompts as gradingPrompts } from './apps/grading/legacy/prompt';
-import { generateGrades } from './apps/grading/service';
-import { validateGradingInput } from './apps/grading/routes';
+import { computeReviewMetrics as gradingMetrics } from "../grading/metrics";
+import { buildPrompts as gradingPrompts } from "../grading/prompt";
+import { generateGrades } from "../grading/service";
+import { validateGradingInput } from "../grading/routes";
 import { buildTemplateRegistry, validateTemplateRegistryFileData } from './template-registry';
 import { sendToOpenRouter } from './openrouter';
 import { renderFeedbackFromTemplateMatches } from './template-renderer';
 import { extractChanges } from './change-extractor';
 import type { NormalizedState } from './types';
-import { composeReviewSystemPrompt } from './guidelines';
+import { composeReviewSystemPrompt } from "../../shared/guidelines";
 
 export function labPromptSettings() {
   const empty: NormalizedState = { actionId: '', actionLevel: 1, actionDecision: '', annotations: [], recordings: [], lintErrors: [], capturedAt: '' };

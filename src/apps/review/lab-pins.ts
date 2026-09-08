@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { config } from './config';
+import { config } from "../../config";
 import { getReviewHistoryDetail, listReviewHistory, type ReviewHistoryDetail } from './history';
 
 type Pin = { pinnedAt: string; task: ReviewHistoryDetail };

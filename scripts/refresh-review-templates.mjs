@@ -24,7 +24,7 @@ const corrections = {
   'word_accuracy.nevernyy_format_stammera': ['L2 исправил оформление запинки или повтора: фрагменты одного слова — чт- чт- чтобы; повтор нескольких слов — я хочу-- я хочу; намеренный повтор — по правилам пунктуации.', 'Различай запинку внутри слова и повтор нескольких слов; сохраняй правильное написание фрагментов.'],
   'word_accuracy.netipichnoe_proiznoshenie_bez_iskazh': ['L2 добавил {ИСКАЖ: ...} после нормативной формы при намеренном нетипичном произношении. Само добавление служебного тега относится к тегам; не дублируй его как лексическую ошибку.', 'При намеренном нетипичном произношении сохраняй нормативную форму и передавай услышанное в {ИСКАЖ: ...}.']
 };
-const directories = process.argv.slice(2).length ? process.argv.slice(2).map(path => resolve(path)) : [resolve(root, 'src/default-templates')];
+const directories = process.argv.slice(2).length ? process.argv.slice(2).map(path => resolve(path)) : [resolve(root, 'src/apps/review/default-templates')];
 const backup = resolve(root, 'data/guideline-migration-backups', new Date().toISOString().replace(/[:.]/g, '-'));
 for (const directory of directories) {
   if (!existsSync(directory)) continue;

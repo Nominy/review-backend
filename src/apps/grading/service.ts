@@ -1,11 +1,11 @@
 import { config } from '../../config';
-import { effectivePrompt } from '../../prompt-settings';
+import { effectivePrompt } from "../../shared/prompt-settings";
 import { requestOpenRouterChat } from '../../shared/openrouter-client';
-import { computeReviewMetrics } from './legacy/metrics';
-import { buildPrompts } from './legacy/prompt';
-import { CATEGORIES } from './legacy/rules';
-import type { CategoryName, NormalizedState, PromptPacket } from './legacy/types';
-import { composeReviewSystemPrompt } from '../../guidelines';
+import { computeReviewMetrics } from "./metrics";
+import { buildPrompts } from "./prompt";
+import { CATEGORIES } from "./rules";
+import type { CategoryName, NormalizedState, PromptPacket } from "./types";
+import { composeReviewSystemPrompt } from "../../shared/guidelines";
 
 export const GRADING_VERSION = 'guidelines-2026-09-v4';
 export type GradingInput = { reviewActionId: string; original: NormalizedState; current: NormalizedState };

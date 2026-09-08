@@ -1,4 +1,4 @@
-import { guidelinesPrompt, REVIEW_DATA_BOUNDARY, REVIEW_INTERPRETATION, CATEGORY_LABELS } from './guidelines';
+import { guidelinesPrompt, REVIEW_DATA_BOUNDARY, REVIEW_INTERPRETATION, CATEGORY_LABELS } from "../../shared/guidelines";
 import { extractChanges, getRelevantCategories } from "./change-extractor";
 import type { Change, PromptPacket, TemplatePromptCatalog } from "./types";
 

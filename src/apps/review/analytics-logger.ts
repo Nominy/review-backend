@@ -1,6 +1,6 @@
 import type { AnalyticsEventType, BabelDiffPayload, NormalizedState, PreparedPayload } from "./types";
-import { writeStructuredLog } from "./structured-logger";
-import { isObject } from "./shared/http";
+import { writeStructuredLog } from "../../shared/structured-logger";
+import { isObject } from "../../shared/http";
 
 type ReviewAnalyticsLogEntry = {
   logType: "review_analytics";

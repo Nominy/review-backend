@@ -1,5 +1,5 @@
-import { requestApiKey, keyUsage } from '../../review-key';
-import { reviewGuidelines, CATEGORY_LABELS } from '../../guidelines';
+import { requestApiKey, keyUsage } from "../../shared/review-key";
+import { reviewGuidelines, CATEGORY_LABELS } from "../../shared/guidelines";
 import { gradingPolicy } from '../grading/policy';
 import { fileURLToPath } from "node:url";
 import type { AnyElysia, InferContext } from "elysia";
@@ -15,21 +15,21 @@ import {
   submitTranscriptReviewActionAnalytics,
   updateInteractiveReviewSessionCardTemplateMatch,
   updateInteractiveReviewSessionComments
-} from "../../service";
-import { searchTemplates } from "../../template-search";
-import { getReviewHistoryDetail, listReviewHistory } from "../../history";
+} from "./service";
+import { searchTemplates } from "./template-search";
+import { getReviewHistoryDetail, listReviewHistory } from "./history";
 import { config } from "../../config";
-import { getLabTask, listLabTasks, setLabTaskPin } from '../../lab-pins';
-import { labPromptSettings, replayLabTask } from '../../lab-service';
-import { savePromptSettings, validatePromptSettings } from '../../prompt-settings';
+import { getLabTask, listLabTasks, setLabTaskPin } from "./lab-pins";
+import { labPromptSettings, replayLabTask } from "./lab-service";
+import { savePromptSettings, validatePromptSettings } from "../../shared/prompt-settings";
 import {
   createTemplateForLab,
   importTemplatesFromCsv,
   listTemplatesLabData,
   saveTemplatesLabDraft,
   updateTemplateForLab
-} from "../../template-admin";
-import type { AnalyticsEventType, BabelDiffPayload, NormalizedState } from "../../types";
+} from "./template-admin";
+import type { AnalyticsEventType, BabelDiffPayload, NormalizedState } from "./types";
 import {
   type RouteSet,
   getErrorMessage,
@@ -86,9 +86,9 @@ type TemplatesLabSaveBody = {
   categories: unknown[];
 };
 
-const TEMPLATES_LAB_INDEX_PATH = fileURLToPath(new URL("../../templates-lab/index.html", import.meta.url));
-const TEMPLATES_LAB_STYLES_PATH = fileURLToPath(new URL("../../templates-lab/styles.css", import.meta.url));
-const TEMPLATES_LAB_APP_PATH = fileURLToPath(new URL("../../templates-lab/app.js", import.meta.url));
+const TEMPLATES_LAB_INDEX_PATH = fileURLToPath(new URL("./templates-lab/index.html", import.meta.url));
+const TEMPLATES_LAB_STYLES_PATH = fileURLToPath(new URL("./templates-lab/styles.css", import.meta.url));
+const TEMPLATES_LAB_APP_PATH = fileURLToPath(new URL("./templates-lab/app.js", import.meta.url));
 
 function assertPrepareBody(body: unknown): asserts body is PrepareBody {
   if (!isObject(body)) throw new Error("Body must be an object.");
@@ -314,10 +314,10 @@ export function registerReviewRoutes(app: AnyElysia): AnyElysia {
     catch (error) { set.status = getErrorStatus(error, 502); return { error: getErrorMessage(error) }; }
   }).get('/templates-lab/workspace.js', ({ headers, set }) => {
     const blocked = requireTemplatesLabAccess(headers.authorization, set);
-    return blocked || Bun.file(fileURLToPath(new URL('../../templates-lab/workspace.js', import.meta.url)));
+    return blocked || Bun.file(fileURLToPath(new URL("./templates-lab/workspace.js", import.meta.url)));
   }).get('/templates-lab/layout.js', ({ headers, set }) => {
     const blocked = requireTemplatesLabAccess(headers.authorization, set);
-    return blocked || Bun.file(fileURLToPath(new URL('../../templates-lab/layout.js', import.meta.url)));
+    return blocked || Bun.file(fileURLToPath(new URL("./templates-lab/layout.js", import.meta.url)));
   });
   for (const extension of ['css', 'js']) app.get('/templates-lab/shared-ui.' + extension, async ({ headers, set }) => {
     const blocked = requireTemplatesLabAccess(headers.authorization, set);

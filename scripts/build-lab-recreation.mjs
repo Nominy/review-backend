@@ -1,7 +1,8 @@
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { resolve, sep } from 'node:path';
 import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, copyFileSync, rmSync, existsSync, lstatSync, symlinkSync, unlinkSync } from 'node:fs';
+import { materializeRecreationSnapshot } from '@nominy/babel-extension-e2e/recreation-snapshot';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const shared = resolve(root, '../../shared/babel-extension-platform/packages/babel-extension-e2e');
 const app = resolve(shared, 'fixtures/recreation/app');
@@ -22,7 +23,6 @@ function run(script, args) {
   if (result.status !== 0) throw new Error('Recreation build failed: ' + (result.error?.message || result.status));
 }
 try {
-  const { materializeRecreationSnapshot } = await import(pathToFileURL(resolve(shared, 'src/recreation-snapshot.mjs')));
   await materializeRecreationSnapshot({ destinationDir: stage });
   symlinkSync(resolve(app, 'node_modules'), resolve(stage, 'node_modules'), 'junction');
   for (const [source, target] of [['archive.html', 'archive.html'], ['archive-main.tsx', 'src/archive-main.tsx'], ['archive.css', 'src/archive.css'], ['archive-client.ts', 'src/recovered/archive-client.ts']]) copyFileSync(resolve(root, 'scripts/lab-recreation', source), resolve(stage, target));

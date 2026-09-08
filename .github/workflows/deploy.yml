@@ -22,6 +22,20 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Check out shared build dependencies
+        env:
+          BABEL_EXTENSION_PLATFORM_REF: ${{ vars.BABEL_EXTENSION_PLATFORM_REF }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$BABEL_EXTENSION_PLATFORM_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Set BABEL_EXTENSION_PLATFORM_REF to the published shared-platform commit SHA providing the frontend UI and E2E build exports."
+            exit 1
+          fi
+          mkdir -p ../../shared
+          git clone https://github.com/Nominy/babel-extension-platform.git ../../shared/babel-extension-platform
+          git -C ../../shared/babel-extension-platform checkout "$BABEL_EXTENSION_PLATFORM_REF"
+
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
 
@@ -37,9 +51,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p ../../shared
-          git clone https://github.com/Nominy/babel-extension-platform.git ../../shared/babel-extension-platform
-          git -C ../../shared/babel-extension-platform checkout ff6854bc99a5ffe3e3a5ec6161fbc8ea9c4f890f
           npm ci --prefix ../../shared/babel-extension-platform/packages/babel-extension-e2e/fixtures/recreation/app
           npm run build:lab
           tar -czf "$RUNNER_TEMP/review-lab-dist.tgz" -C dist .
@@ -238,7 +249,7 @@ jobs:
           cd "$DEPLOY_PATH"
 
           log "Installing dependencies with bun"
-          bun install --frozen-lockfile
+          bun install --frozen-lockfile --production
           log "Dependencies installed"
           mkdir -p dist
           tar -xzf .review-lab-dist.tgz -C dist
@@ -317,7 +328,7 @@ jobs:
 
           cd "$DEPLOY_PATH"
           git checkout "$previous_commit"
-          bun install --frozen-lockfile
+          bun install --frozen-lockfile --production
           pm2 restart ecosystem.config.cjs --update-env || pm2 start ecosystem.config.cjs
           pm2 save
           log "Rolled back to $previous_commit"

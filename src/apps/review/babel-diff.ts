@@ -1,5 +1,5 @@
 import type { BabelDiffPayload } from "./types";
-import { isObject } from "./shared/http";
+import { isObject } from "../../shared/http";
 
 type BabelDiffPromptPacket = {
   referenceReviewActionId: string;

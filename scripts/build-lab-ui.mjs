@@ -1,10 +1,9 @@
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { build } from 'esbuild';
+import { UI_STYLES } from '@nominy/babel-extension-frontend/ui-styles';
 const root = fileURLToPath(new URL('../', import.meta.url));
-const shared = resolve(root, '../../shared/babel-extension-platform/packages');
-const { build } = await import(pathToFileURL(resolve(shared, 'babel-extension-e2e/fixtures/recreation/app/node_modules/esbuild/lib/main.js')));
-const { UI_STYLES } = await import(pathToFileURL(resolve(shared, 'babel-extension-frontend/src/ui-styles.mjs')));
 mkdirSync(resolve(root, 'dist'), { recursive: true });
 writeFileSync(resolve(root, 'dist/lab-ui.css'), UI_STYLES);
-await build({ entryPoints: [resolve(root, 'src/templates-lab/shared-ui.js')], outfile: resolve(root, 'dist/lab-ui.js'), bundle: true, format: 'esm', minify: true, alias: { '@babel/shared-ui': resolve(shared, 'babel-extension-frontend/src/components.mjs') } });
+await build({ entryPoints: [resolve(root, 'src/apps/review/templates-lab/shared-ui.js')], outfile: resolve(root, 'dist/lab-ui.js'), bundle: true, format: 'esm', minify: true });

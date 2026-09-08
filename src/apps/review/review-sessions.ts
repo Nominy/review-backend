@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { isObject } from "./shared/http";
+import { isObject } from "../../shared/http";
 import type {
   BabelDiffPayload,
   ChangeEvidence,

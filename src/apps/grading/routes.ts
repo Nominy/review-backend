@@ -1,8 +1,8 @@
-import { requestApiKey } from '../../review-key';
+import { requestApiKey } from "../../shared/review-key";
 import type { AnyElysia } from 'elysia';
 import { isObject } from '../../shared/http';
 import { generateGrades, type GradingInput } from './service';
-import { writeStructuredLog } from '../../structured-logger';
+import { writeStructuredLog } from "../../shared/structured-logger";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function validateGradingInput(body: unknown): asserts body is GradingInput {

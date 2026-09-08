@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'bun:test';
-import { computeReviewMetrics } from './legacy/metrics';
-import { CATEGORIES } from './legacy/rules';
+import { computeReviewMetrics } from "./metrics";
+import { CATEGORIES } from "./rules";
 import { generateGrades, validateGrades } from './service';
 import { validateGradingInput } from './routes';
 import { createApp } from '../../app';
 import { config } from '../../config';
-import type { Annotation, NormalizedState } from './legacy/types';
+import type { Annotation, NormalizedState } from "./types";
 const originalId = '11111111-1111-4111-8111-111111111111';
 const currentId = '22222222-2222-4222-8222-222222222222';
 const segment = (id: string, text: string, start: number, end = start + 2, track = 'speaker-a'): Annotation => ({
