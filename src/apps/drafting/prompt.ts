@@ -97,13 +97,14 @@ export function buildUserPrompt(context: RowRewriteContext): string {
         ]
       : [
           "Do not replace transcript words. Trust the human-written words over any transcription guess.",
-          "Allowed edits without audio are only tags, punctuation, and numeric normalization. Do not rewrite vocabulary or turn one word into a different word."
+          "Allowed edits without audio are tags, punctuation, numeric normalization, and context-supported е-to-ё spelling corrections. The е-to-ё correction is an explicit exception to word preservation, not permission to rewrite vocabulary or substitute a different meaning."
         ]),
     ...(context.audioClips?.length
       ? []
       : [
           "Не удаляй, не переформулируй и не переставляй никакие теги, которые уже были в исходной строке. Сохрани их буквально, включая скобки, регистр, пробелы и позицию относительно слов."
         ]),
+    "В текущей строке восстанавливай ё вместо е по смыслу и грамматическому контексту, в том числе без аудио: 'все прошло' -> 'всё прошло', 'он еще придет' -> 'он ещё придёт', но 'все пришли' оставь без изменения. Не заменяй е механически и не меняй смысл. Если чтение е/ё неоднозначно и контекста недостаточно, сохрани исходное написание; уже правильную ё сохраняй. Существующие теги по-прежнему сохраняй согласно правилам выше.",
     "Если сомневаешься между '-' и '--', предпочитай '--', кроме явного заикания внутри того же слова.",
     "Будь внимателен к пунктуации, особенно вокруг междометий и частиц вроде 'ну', 'а', 'э'. Не превращай их в заикание без явного основания.",
     "Comma-isolate standalone interjections and filler particles. For a row-start interjection, put a comma after it: 'Ну, я думаю'. For a middle interjection, put commas on both sides: 'Я, ну, думаю'. For sentence-final interjections, keep the normal sentence punctuation after the interjection.",

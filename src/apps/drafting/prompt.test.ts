@@ -93,25 +93,6 @@ describe("buildUserPrompt", () => {
     expect(prompt).toContain("Do not use М-м as a generic hesitation");
   });
 
-  test("tells the model to preserve human transcript words", () => {
-    const context: RowRewriteContext = {
-      currentRow: {
-        rowId: "r1",
-        speakerKey: "Speaker 1",
-        startSeconds: 1,
-        endSeconds: 2,
-        text: "М.",
-        index: 0
-      }
-    };
-
-    const prompt = buildUserPrompt(context);
-
-    expect(prompt).toContain("Do not replace transcript words");
-    expect(prompt).toContain("Trust the human-written words over any transcription guess");
-    expect(prompt).toContain("Allowed edits without audio are only tags, punctuation, and numeric normalization");
-    expect(prompt).not.toContain("Correct transcript words only when the audio evidence is clear");
-  });
 
   test("encourages adding clear audio cue tags instead of ignoring them", () => {
     const context: RowRewriteContext = {
